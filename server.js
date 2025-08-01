@@ -4,6 +4,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const https = require('https');
 
 const app = express();
 const PORT = process.env.PORT || 3000; // 修改默认端口为3001
@@ -159,6 +160,20 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-app.listen(PORT, () => {
-    console.log(`服务器运行在 http://localhost:${PORT}`);
+// 读取SSL证书
+const privateKey = fs.readFileSync('ssl/server.key', 'utf8');
+const certificate = fs.readFileSync('ssl/server.cert', 'utf8');
+const credentials = { key: privateKey, cert: certificate };
+
+// 创建HTTPS服务器
+const httpsServer = https.createServer(credentials, app);
+
+// 启动HTTPS服务器
+httpsServer.listen(PORT, () => {
+    console.log(`HTTPS服务器运行在 https://localhost:${PORT}`);
+});
+
+// 同时保留HTTP服务器以便兼容
+app.listen(PORT + 1, () => {
+    console.log(`HTTP服务器运行在 http://localhost:${PORT + 1}`);
 });

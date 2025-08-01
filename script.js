@@ -9,13 +9,11 @@ const cardsListSection = document.getElementById('cards-list');
 const reviewCard = document.getElementById('review-card');
 const cardContent = document.getElementById('card-content');
 
-// 用户认证相关元素
 let userStatus, loginButton, registerButton, logoutButton, syncButton;
 let loginSection, registerSection, syncSection;
 let loginSubmit, loginCancel, registerSubmit, registerCancel;
 let uploadCards, downloadCards, mergeCards, syncCancel;
 
-// 在DOM加载完成后初始化这些元素
 function initAuthElements() {
     userStatus = document.getElementById('user-status');
     loginButton = document.getElementById('login-button');
@@ -43,7 +41,7 @@ let isShowingAnswer = false;
 let currentUser = null;
 let authToken = localStorage.getItem('authToken') || null;
 
-const API_BASE_URL = 'http://117.72.179.137:3000/api'
+const API_BASE_URL = 'https://117.72.179.137:3000/api'
 
 let isServerAvailable = false;
 
