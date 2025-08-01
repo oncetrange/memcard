@@ -1,34 +1,20 @@
-# 记忆卡片应用
+# MemCard
+Web app for create and review cards.
 
-这是一个简单的网页应用，用于创建和复习记忆卡片。
+## How to use?
+Input question (front) and answer (back) and click 「Save」 to create card.
 
-## 功能特点
+Click 「Review」 to review cards.
 
-- 创建双面记忆卡片（正面问题，背面答案）
-- 保存卡片到本地存储
-- 查看已创建的卡片列表
-- 随机顺序复习卡片
-- 滑动手势支持（左滑表示不认识，右滑表示认识）
-- 记录每张卡片的复习历史和掌握情况
-- 响应式设计，适配移动设备
+When reviewing:
+- Swipe up to flip the card.
+- Swipe left means forget, the card will reappear later.
+- Swipe right means remember.
 
-## 使用方法
+*Recommendation: think about answer first, swipe up to confirm, then swipe left/right*
 
-1. 在「创建卡片」区域输入卡片的正面和背面内容，点击「保存卡片」按钮
-2. 已创建的卡片会显示在「卡片列表」区域
-3. 点击「开始复习」按钮开始复习
-4. 复习时，先显示卡片正面内容，点击「显示答案」查看背面内容
-5. 查看答案后，可以通过左右滑动来标记是否认识：
-   - 左滑表示不认识
-   - 右滑表示认识
-
-## 技术实现
-
-- 纯原生JavaScript实现，无需任何框架
-- 使用localStorage保存卡片数据
-- 触摸和鼠标事件处理，支持滑动手势
-- CSS动画效果增强用户体验
-
-## 本地运行
-
-直接在浏览器中打开index.html文件即可使用。
+## Review strategy
+1. Choose cards (20 at most) according to their 「next review date」(earlier first).
+3. If you swipe right the first time (in this review) you see the card, the next review time will be double (initialize to 6 hours for the card not 2. in last review).
+4. Forget will half the next review time for the card not 2. in last review, else decrease more than half (longer next review time, more decrease).
+5. next review time will not be lese than 45 minutes (3 forget).

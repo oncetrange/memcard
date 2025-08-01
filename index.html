@@ -1,13 +1,68 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>memcard</title>
+    <title>MemCard</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
+        <div id="header" class="header">
+            <h1>MemCard</h1>
+            <div class="user-actions">
+                <span id="user-status">offline</span>
+                <button id="login-button" class="btn btn-small">login</button>
+                <button id="register-button" class="btn btn-small">register</button>
+                <button id="logout-button" class="btn btn-small hidden">logout</button>
+                <button id="sync-button" class="btn btn-small hidden">sync</button>
+            </div>
+        </div>
+        
+        <div id="login-section" class="section hidden">
+            <h2>login</h2>
+            <div class="input-group">
+                <label for="login-username">Username</label>
+                <input type="text" id="login-username" placeholder="please input your username..">
+            </div>
+            <div class="input-group">
+                <label for="login-password">Password</label>
+                <input type="password" id="login-password" placeholder="please input your password..">
+            </div>
+            <div class="button-group">
+                <button id="login-submit" class="btn">login</button>
+                <button id="login-cancel" class="btn btn-secondary">cancel</button>
+            </div>
+        </div>
+        
+        <div id="register-section" class="section hidden">
+            <h2>register</h2>
+            <div class="input-group">
+                <label for="register-username">username</label>
+                <input type="text" id="register-username" placeholder="please input your username..">
+            </div>
+            <div class="input-group">
+                <label for="register-password">password</label>
+                <input type="password" id="register-password" placeholder="please input your password..">
+            </div>
+            <div class="input-group">
+                <label for="register-confirm-password">confirm password</label>
+                <input type="password" id="register-confirm-password" placeholder="please input your password again..">
+            </div>
+            <div class="button-group">
+                <button id="register-submit" class="btn">register</button>
+                <button id="register-cancel" class="btn btn-secondary">cancel</button>
+            </div>
+        </div>
+        
+        <div id="sync-section" class="section hidden">
+            <h2>synchronization</h2>
+            <div class="sync-options">
+                <button id="upload-cards" class="btn">upload</button>
+                <button id="download-cards" class="btn">download</button>
+                <button id="merge-cards" class="btn">merge</button>
+                <button id="sync-cancel" class="btn btn-secondary">cancel</button>
+            </div>
+        </div>
         <div id="create-section" class="section">
             <h2>Create</h2>
             <div class="input-group">
@@ -39,6 +94,6 @@
         </div>
     </div>
     
-    <script src="script.js"></script>
+    <script src="script.js?v=1.0.1"></script>
 </body>
 </html>

@@ -9,16 +9,524 @@ const cardsListSection = document.getElementById('cards-list');
 const reviewCard = document.getElementById('review-card');
 const cardContent = document.getElementById('card-content');
 
+// 用户认证相关元素
+let userStatus, loginButton, registerButton, logoutButton, syncButton;
+let loginSection, registerSection, syncSection;
+let loginSubmit, loginCancel, registerSubmit, registerCancel;
+let uploadCards, downloadCards, mergeCards, syncCancel;
+
+// 在DOM加载完成后初始化这些元素
+function initAuthElements() {
+    userStatus = document.getElementById('user-status');
+    loginButton = document.getElementById('login-button');
+    registerButton = document.getElementById('register-button');
+    logoutButton = document.getElementById('logout-button');
+    syncButton = document.getElementById('sync-button');
+    loginSection = document.getElementById('login-section');
+    registerSection = document.getElementById('register-section');
+    syncSection = document.getElementById('sync-section');
+    loginSubmit = document.getElementById('login-submit');
+    loginCancel = document.getElementById('login-cancel');
+    registerSubmit = document.getElementById('register-submit');
+    registerCancel = document.getElementById('register-cancel');
+    uploadCards = document.getElementById('upload-cards');
+    downloadCards = document.getElementById('download-cards');
+    mergeCards = document.getElementById('merge-cards');
+    syncCancel = document.getElementById('sync-cancel');
+}
+
+// 全局变量
 let cards = JSON.parse(localStorage.getItem('memoryCards')) || [];
 let reviewCards = [];
 let currentCardIndex = 0;
 let isShowingAnswer = false;
+let currentUser = null;
+let authToken = localStorage.getItem('authToken') || null;
 
+const API_BASE_URL = 'http://117.72.179.137:3000/api'
 
+let isServerAvailable = false;
+
+async function checkServerAvailability() {
+    try {
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Request timeout.')), 2000);
+        });
+        
+        const fetchPromise = fetch(`${API_BASE_URL}/health`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const response = await Promise.race([fetchPromise, timeoutPromise]);
+        isServerAvailable = response.ok;
+    } catch (error) {
+        console.log('Server unavailable, using offline mode');
+        isServerAvailable = false;
+    }
+    updateServerStatusUI();
+    return isServerAvailable;
+}
+
+function updateServerStatusUI() {
+    if (userStatus) {
+        if (!isServerAvailable) {
+            if (loginButton) loginButton.classList.add('hidden');
+            if (registerButton) registerButton.classList.add('hidden');
+            if (syncButton) syncButton.classList.add('hidden');
+            if (logoutButton) logoutButton.classList.add('hidden');
+            userStatus.textContent = 'offline';
+        }
+    }
+}
+
+async function register(username, password, confirmPassword) {
+    if (password !== confirmPassword) {
+        alert('Passwords do not match');
+        return false;
+    }
+    
+    // 检查服务器是否可用
+    if (!isServerAvailable && !(await checkServerAvailability())) {
+        alert('Server unavailable, unable to register. Please try again later.');
+        return false;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/register`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, password })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Register failed!');
+        }
+        
+        alert('Sucessfully registered! Please login.');
+        showLoginSection();
+        return true;
+    } catch (error) {
+        alert(error.message);
+        return false;
+    }
+}
+
+async function login(username, password) {
+    if (!isServerAvailable && !(await checkServerAvailability())) {
+        alert('Server unavailable, unable to login.');
+        return false;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, password })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Login failed!');
+        }
+
+        authToken = data.token;
+        currentUser = data.username;
+        localStorage.setItem('authToken', authToken);
+        localStorage.setItem('currentUser', currentUser);
+
+        updateAuthUI();
+        hideAllSections();
+        createSection.classList.remove('hidden');
+        cardsListSection.classList.remove('hidden');
+        
+        return true;
+    } catch (error) {
+        alert(error.message);
+        return false;
+    }
+}
+
+async function logout() {
+    if (!authToken) return;
+    
+    // 检查服务器是否可用
+    if (isServerAvailable) {
+        try {
+            await fetch(`${API_BASE_URL}/logout`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': authToken,
+                    'Content-Type': 'application/json'
+                }
+            });
+        } catch (error) {
+            console.error('logout error:', error);
+        }
+    }
+    
+    // 清除认证信息
+    authToken = null;
+    currentUser = null;
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('currentUser');
+    
+    // 更新UI
+    updateAuthUI();
+}
+
+async function checkAuth() {
+    if (!authToken) {
+        currentUser = null;
+        updateAuthUI();
+        return false;
+    }
+
+    if (!await checkServerAvailability()) {
+        currentUser = localStorage.getItem('currentUser');
+        if (currentUser) {
+            updateAuthUI();
+            return true;
+        } else {
+            authToken = null;
+            updateAuthUI();
+            return false;
+        }
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/cards`, {
+            headers: {
+                'Authorization': authToken
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Authentication failed!');
+        }
+        
+        // 从响应中提取用户名
+        currentUser = localStorage.getItem('currentUser') || '用户';
+        updateAuthUI();
+        return true;
+    } catch (error) {
+        console.error('Authentication error:', error);
+        authToken = null;
+        currentUser = null;
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('currentUser');
+        updateAuthUI();
+        return false;
+    }
+}
+
+// 卡片同步相关函数
+async function uploadCardsToServer() {
+    if (!authToken) {
+        alert('Please login first');
+        return false;
+    }
+    
+    // 检查服务器是否可用
+    if (!isServerAvailable && !(await checkServerAvailability())) {
+        alert('Server unavailable.');
+        return false;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/cards`, {
+            method: 'POST',
+            headers: {
+                'Authorization': authToken,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(cards)
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'Upload failed!');
+        }
+        
+        alert('Successfully uploaded!');
+        return true;
+    } catch (error) {
+        alert(error.message);
+        return false;
+    }
+}
+
+async function downloadCardsFromServer() {
+    if (!authToken) {
+        alert('请先登录');
+        return false;
+    }
+    
+    // 检查服务器是否可用
+    if (!isServerAvailable && !(await checkServerAvailability())) {
+        alert('Server unavailable.');
+        return false;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/cards`, {
+            headers: {
+                'Authorization': authToken
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Download failed!');
+        }
+        
+        const serverCards = await response.json();
+        
+        if (confirm('Download will cover local cards, continue?')) {
+            cards = serverCards;
+            saveCards();
+            renderCardsList();
+            updateReviewButtonState();
+            alert('Successfully downloaded!');
+            return true;
+        }
+    } catch (error) {
+        alert(error.message);
+        return false;
+    }
+}
+
+async function mergeCardsWithServer() {
+    if (!authToken) {
+        alert('Please login first.');
+        return false;
+    }
+
+    if (!isServerAvailable && !(await checkServerAvailability())) {
+        alert('Server unavailable.');
+        return false;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/cards`, {
+            headers: {
+                'Authorization': authToken
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Download cards failed.');
+        }
+        
+        const serverCards = await response.json();
+        
+        const mergedCards = [...cards];
+        const localCardIds = new Set(cards.map(card => card.id));
+        
+        for (const serverCard of serverCards) {
+            if (!localCardIds.has(serverCard.id)) {
+                mergedCards.push(serverCard);
+            }
+        }
+        
+        cards = mergedCards;
+        saveCards();
+        renderCardsList();
+        updateReviewButtonState();
+
+        await uploadCardsToServer();
+        
+        alert('Successfully merged!');
+        return true;
+    } catch (error) {
+        alert(error.message);
+        return false;
+    }
+}
+
+function updateAuthUI() {
+    if (!userStatus || !loginButton || !registerButton || !logoutButton || !syncButton) {
+        return;
+    }
+    
+    if (currentUser && authToken) {
+        userStatus.textContent = `${currentUser}`;
+        loginButton.classList.add('hidden');
+        registerButton.classList.add('hidden');
+        logoutButton.classList.remove('hidden');
+        syncButton.classList.remove('hidden');
+    } else {
+        userStatus.textContent = 'offline';
+        loginButton.classList.remove('hidden');
+        registerButton.classList.remove('hidden');
+        logoutButton.classList.add('hidden');
+        syncButton.classList.add('hidden');
+    }
+}
+
+function showLoginSection() {
+    hideAllSections();
+    if (loginSection) loginSection.classList.remove('hidden');
+}
+
+function showRegisterSection() {
+    hideAllSections();
+    if (registerSection) registerSection.classList.remove('hidden');
+}
+
+function showSyncSection() {
+    hideAllSections();
+    if (syncSection) syncSection.classList.remove('hidden');
+}
+
+function hideAllSections() {
+    if (createSection) createSection.classList.add('hidden');
+    if (cardsListSection) cardsListSection.classList.add('hidden');
+    if (reviewSection) reviewSection.classList.add('hidden');
+    if (loginSection) loginSection.classList.add('hidden');
+    if (registerSection) registerSection.classList.add('hidden');
+    if (syncSection) syncSection.classList.add('hidden');
+}
 
 function initApp() {
+    initAuthElements();
+
     renderCardsList();
     updateReviewButtonState();
+
+    checkServerAvailability().then(() => {
+        if (userStatus) {
+            checkAuth();
+        }
+    });
+
+    if (loginButton) {
+        loginButton.addEventListener('click', showLoginSection);
+    }
+    
+    if (registerButton) {
+        registerButton.addEventListener('click', showRegisterSection);
+    }
+    
+    if (logoutButton) {
+        logoutButton.addEventListener('click', logout);
+    }
+    
+    if (syncButton) {
+        syncButton.addEventListener('click', showSyncSection);
+    }
+    
+    if (loginSubmit) {
+        loginSubmit.addEventListener('click', async () => {
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value.trim();
+            
+            if (!username || !password) {
+                alert('Please enter the username and password.');
+                return;
+            }
+            
+            if (await login(username, password)) {
+                document.getElementById('login-username').value = '';
+                document.getElementById('login-password').value = '';
+            }
+        });
+    }
+    
+    if (loginCancel) {
+        loginCancel.addEventListener('click', () => {
+            hideAllSections();
+            createSection.classList.remove('hidden');
+            cardsListSection.classList.remove('hidden');
+            const usernameInput = document.getElementById('login-username');
+            const passwordInput = document.getElementById('login-password');
+            if (usernameInput) usernameInput.value = '';
+            if (passwordInput) passwordInput.value = '';
+        });
+    }
+    
+    if (registerSubmit) {
+        registerSubmit.addEventListener('click', async () => {
+            const username = document.getElementById('register-username').value.trim();
+            const password = document.getElementById('register-password').value.trim();
+            const confirmPassword = document.getElementById('register-confirm-password').value.trim();
+            
+            if (!username || !password || !confirmPassword) {
+                alert('Please fill all boxes.');
+                return;
+            }
+            
+            if (await register(username, password, confirmPassword)) {
+                const usernameInput = document.getElementById('register-username');
+                const passwordInput = document.getElementById('register-password');
+                const confirmInput = document.getElementById('register-confirm-password');
+                if (usernameInput) usernameInput.value = '';
+                if (passwordInput) passwordInput.value = '';
+                if (confirmInput) confirmInput.value = '';
+            }
+        });
+    }
+    
+    if (registerCancel) {
+        registerCancel.addEventListener('click', () => {
+            hideAllSections();
+            createSection.classList.remove('hidden');
+            cardsListSection.classList.remove('hidden');
+            const usernameInput = document.getElementById('register-username');
+            const passwordInput = document.getElementById('register-password');
+            const confirmInput = document.getElementById('register-confirm-password');
+            if (usernameInput) usernameInput.value = '';
+            if (passwordInput) passwordInput.value = '';
+            if (confirmInput) confirmInput.value = '';
+        });
+    }
+    
+    if (uploadCards) {
+        uploadCards.addEventListener('click', async () => {
+            if (await uploadCardsToServer()) {
+                hideAllSections();
+                createSection.classList.remove('hidden');
+                cardsListSection.classList.remove('hidden');
+            }
+        });
+    }
+    
+    if (downloadCards) {
+        downloadCards.addEventListener('click', async () => {
+            if (await downloadCardsFromServer()) {
+                hideAllSections();
+                createSection.classList.remove('hidden');
+                cardsListSection.classList.remove('hidden');
+            }
+        });
+    }
+    
+    if (mergeCards) {
+        mergeCards.addEventListener('click', async () => {
+            if (await mergeCardsWithServer()) {
+                hideAllSections();
+                createSection.classList.remove('hidden');
+                cardsListSection.classList.remove('hidden');
+            }
+        });
+    }
+    
+    if (syncCancel) {
+        syncCancel.addEventListener('click', () => {
+            hideAllSections();
+            createSection.classList.remove('hidden');
+            cardsListSection.classList.remove('hidden');
+        });
+    }
 }
 
 saveCardButton.addEventListener('click', () => {
