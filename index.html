@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>memcard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div id="create-section" class="section">
+            <h2>Create</h2>
+            <div class="input-group">
+                <label for="card-front">Front</label>
+                <textarea id="card-front" placeholder="please enter the front content..."></textarea>
+            </div>
+            <div class="input-group">
+                <label for="card-back">Back</label>
+                <textarea id="card-back" placeholder="please enter the back content..."></textarea>
+            </div>
+            <button id="save-card" class="btn">Save</button>
+        </div>
+        
+        <div id="cards-list" class="section">
+            <h2>Card List</h2>
+            <button id="start-review" class="btn">Review</button>
+            <div id="cards-container"></div>
+        </div>
+        
+        <div id="review-section" class="section hidden">
+            <div id="review-card" class="card">
+                <div id="card-content" class="card-content"></div>
+            </div>
+            <div id="swipe-instructions" class="swipe-instructions">
+                <div class="swipe-up">up - show/hide answer</div>
+                <div class="swipe-left">left - forget</div>
+                <div class="swipe-right">right - remember</div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
