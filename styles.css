@@ -231,6 +231,28 @@ textarea {
     color: #2ecc71;
 }
 
+/* 复习控制区域 */
+.review-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.speech-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #6c757d;
+    cursor: pointer;
+}
+
+.speech-toggle input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+}
+
 /* 卡片列表 */
 #cards-container {
     margin-bottom: 20px;

@@ -41,6 +41,7 @@ let isShowingAnswer = false;
 let currentUser = null;
 let authToken = localStorage.getItem('authToken') || null;
 let editingCardId = null;
+let speechSynthesis = window.speechSynthesis;
 
 const API_BASE_URL = 'https://117.72.179.137:3000/api'
 
@@ -60,6 +61,29 @@ function updateCardsStats() {
     if (reviewCountElement) {
         reviewCountElement.textContent = reviewCount;
     }
+}
+
+function speakText(text, options = {}) {
+    if (!speechSynthesis) {
+        console.log('Speech synthesis not supported');
+        return;
+    }
+
+    const speechEnabled = document.getElementById('speech-enabled');
+    if (speechEnabled && !speechEnabled.checked) {
+        return;
+    }
+    
+    speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    utterance.rate = options.rate || 0.8;
+    utterance.pitch = options.pitch || 1.0;
+    utterance.volume = options.volume || 0.8;
+    utterance.lang = options.lang || 'en-US';
+    
+    speechSynthesis.speak(utterance);
 }
 
 function showEditSection(cardId) {
@@ -780,6 +804,14 @@ function showCurrentCard() {
     cardContent.style.color = '';
     
     isShowingAnswer = false;
+
+    speakText(card.front, {
+        rate: 0.7,
+        pitch: 1.0,
+        volume: 0.9,
+        lang: 'en-US'
+    });
+    
 }
 
 // switch front/back
@@ -794,6 +826,14 @@ function toggleCardFace() {
         cardContent.style.alignItems = 'center';
         cardContent.style.justifyContent = 'center';
         isShowingAnswer = false;
+        
+        // 播放正面内容
+        speakText(card.front, {
+            rate: 0.7,
+            pitch: 1.0,
+            volume: 0.9,
+            lang: 'en-US'
+        });
     } else {
         // 显示背面时，在顶端中间显示正面内容
         cardContent.innerHTML = `
@@ -842,7 +882,6 @@ function handleKeyDown(e) {
     }
 }
 
-// 滑动事件处理函数
 let startX = 0;
 let startY = 0;
 let currentX = 0;
