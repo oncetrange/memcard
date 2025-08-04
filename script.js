@@ -33,17 +33,88 @@ function initAuthElements() {
     syncCancel = document.getElementById('sync-cancel');
 }
 
-// 全局变量
+
 let cards = JSON.parse(localStorage.getItem('memoryCards')) || [];
 let reviewCards = [];
 let currentCardIndex = 0;
 let isShowingAnswer = false;
 let currentUser = null;
 let authToken = localStorage.getItem('authToken') || null;
+let editingCardId = null;
 
 const API_BASE_URL = 'https://117.72.179.137:3000/api'
 
 let isServerAvailable = false;
+
+function updateCardsStats() {
+    const totalCount = cards.length;
+    const now = Date.now();
+    const reviewCount = cards.filter(card => card.nextReviewDate <= now).length;
+    
+    const totalCountElement = document.getElementById('total-count');
+    const reviewCountElement = document.getElementById('review-count');
+    
+    if (totalCountElement) {
+        totalCountElement.textContent = totalCount;
+    }
+    if (reviewCountElement) {
+        reviewCountElement.textContent = reviewCount;
+    }
+}
+
+function showEditSection(cardId) {
+    const card = cards.find(c => c.id === cardId);
+    if (!card) return;
+    
+    editingCardId = cardId;
+    const editFrontInput = document.getElementById('edit-card-front');
+    const editBackInput = document.getElementById('edit-card-back');
+    
+    editFrontInput.value = card.front;
+    editBackInput.value = card.back;
+    
+    hideAllSections();
+    document.getElementById('edit-section').classList.remove('hidden');
+}
+
+function saveEdit() {
+    const front = document.getElementById('edit-card-front').value.trim();
+    const back = document.getElementById('edit-card-back').value.trim();
+    
+    if (!front || !back) {
+        alert('Please enter both front and back content');
+        return;
+    }
+    
+    const cardIndex = cards.findIndex(c => c.id === editingCardId);
+    if (cardIndex === -1) return;
+    
+    cards[cardIndex].front = front;
+    cards[cardIndex].back = back;
+    
+    saveCards();
+    renderCardsList();
+    updateCardsStats();
+
+    editingCardId = null;
+    document.getElementById('edit-card-front').value = '';
+    document.getElementById('edit-card-back').value = '';
+
+    hideAllSections();
+    document.getElementById('create-section').classList.remove('hidden');
+    document.getElementById('cards-list').classList.remove('hidden');
+}
+
+
+function cancelEdit() {
+    editingCardId = null;
+    document.getElementById('edit-card-front').value = '';
+    document.getElementById('edit-card-back').value = '';
+    
+    hideAllSections();
+    document.getElementById('create-section').classList.remove('hidden');
+    document.getElementById('cards-list').classList.remove('hidden');
+}
 
 async function checkServerAvailability() {
     try {
@@ -393,6 +464,7 @@ function hideAllSections() {
     if (loginSection) loginSection.classList.add('hidden');
     if (registerSection) registerSection.classList.add('hidden');
     if (syncSection) syncSection.classList.add('hidden');
+    if (document.getElementById('edit-section')) document.getElementById('edit-section').classList.add('hidden');
 }
 
 function initApp() {
@@ -525,6 +597,18 @@ function initApp() {
             cardsListSection.classList.remove('hidden');
         });
     }
+    
+    // 编辑相关按钮事件监听器
+    const saveEditButton = document.getElementById('save-edit');
+    const cancelEditButton = document.getElementById('cancel-edit');
+    
+    if (saveEditButton) {
+        saveEditButton.addEventListener('click', saveEdit);
+    }
+    
+    if (cancelEditButton) {
+        cancelEditButton.addEventListener('click', cancelEdit);
+    }
 }
 
 saveCardButton.addEventListener('click', () => {
@@ -557,7 +641,6 @@ saveCardButton.addEventListener('click', () => {
 
 function renderCardsList() {
     cardsContainer.innerHTML = '';
-    
     if (cards.length === 0) {
         cardsContainer.innerHTML = '<p>empty, please create new cards</p>';
         return;
@@ -592,6 +675,7 @@ function renderCardsList() {
                 </div>
             </div>
             <div class="card-item-actions">
+                <button class="edit-card" data-id="${card.id}">edit</button>
                 <button class="delete-card" data-id="${card.id}">delete</button>
             </div>
         `;
@@ -605,6 +689,15 @@ function renderCardsList() {
             deleteCard(id);
         });
     });
+    
+    document.querySelectorAll('.edit-card').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const id = parseInt(e.target.dataset.id);
+            showEditSection(id);
+        });
+    });
+    
+    updateCardsStats();
 }
 
 function deleteCard(id) {
@@ -653,7 +746,7 @@ function selectCardsForReview() {
     
     reviewCards = eligibleCards.slice(0, 20);
 
-    if (reviewCards.length < 3) {
+    if (reviewCards.length < 10) {
         alert('Not enough cards to review, please create more');
         return false;
     }
@@ -678,6 +771,9 @@ function showCurrentCard() {
     
     const card = reviewCards[currentCardIndex];
     cardContent.textContent = card.front;
+    cardContent.style.display = 'flex';
+    cardContent.style.alignItems = 'center';
+    cardContent.style.justifyContent = 'center';
     cardContent.classList.remove('swiped-left', 'swiped-right', 'swiped-up', 'dragging');
     cardContent.style.transform = '';
     cardContent.style.backgroundColor = '';
@@ -694,20 +790,156 @@ function toggleCardFace() {
     
     if (isShowingAnswer) {
         cardContent.textContent = card.front;
+        cardContent.style.display = 'flex';
+        cardContent.style.alignItems = 'center';
+        cardContent.style.justifyContent = 'center';
         isShowingAnswer = false;
     } else {
-        cardContent.textContent = card.back;
+        // 显示背面时，在顶端中间显示正面内容
+        cardContent.innerHTML = `
+            <div style="position: absolute; top: 0; left: 0; right: 0; text-align: center; font-size: 0.8em; color: #666; padding: 10px; border-bottom: 1px solid #eee; background-color: rgba(255,255,255,0.9); border-radius: 10px 10px 0 0;">
+                ${card.front}
+            </div>
+            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100%; text-align: center; padding: 0 20px;">
+                ${card.back}
+            </div>
+        `;
+        cardContent.style.display = 'block';
+        cardContent.style.alignItems = '';
+        cardContent.style.justifyContent = '';
         isShowingAnswer = true;
     }
 }
 
-function setupSwipeEvents() {
-    let startX = 0;
-    let startY = 0;
-    let currentX = 0;
-    let currentY = 0;
-    let isDragging = false;
+// 键盘事件处理函数
+function handleKeyDown(e) {
+    if (reviewSection.classList.contains('hidden')) return;
+    
+    switch(e.key.toLowerCase()) {
+        case 'h':
+            e.preventDefault();
+            cardContent.classList.add('swiped-left');
+            updateCardStatus(false);
+            setTimeout(nextCard, 300);
+            break;
+        case 'k':
+            e.preventDefault();
+            cardContent.classList.add('swiped-up');
+            setTimeout(() => {
+                toggleCardFace();
+                cardContent.classList.remove('swiped-up');
+                cardContent.style.transform = '';
+                cardContent.style.backgroundColor = '';
+                cardContent.style.color = '';
+            }, 300);
+            break;
+        case 'l':
+            e.preventDefault();
+            cardContent.classList.add('swiped-right');
+            updateCardStatus(true);
+            setTimeout(nextCard, 300);
+            break;
+    }
+}
 
+// 滑动事件处理函数
+let startX = 0;
+let startY = 0;
+let currentX = 0;
+let currentY = 0;
+let isDragging = false;
+
+function handleStart(e) {
+    startX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
+    startY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
+    isDragging = true;
+    cardContent.classList.add('dragging');
+}
+
+function handleMove(e) {
+    if (!isDragging) return;
+    
+    currentX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
+    currentY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
+    
+    const diffX = currentX - startX;
+    const diffY = currentY - startY;
+
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+        cardContent.style.transform = `translateX(${diffX}px) rotate(${diffX * 0.05}deg)`;
+
+        if (diffX < -50) {
+            cardContent.style.backgroundColor = '#e74c3c';
+            cardContent.style.color = 'white';
+        } else if (diffX > 50) {
+            cardContent.style.backgroundColor = '#2ecc71';
+            cardContent.style.color = 'white';
+        } else {
+            cardContent.style.backgroundColor = '';
+            cardContent.style.color = '';
+        }
+    } else {
+        if (diffY < -30) {
+            cardContent.style.transform = `translateY(${diffY}px)`;
+            cardContent.style.backgroundColor = '#3498db';
+            cardContent.style.color = 'white';
+        } else {
+            cardContent.style.transform = '';
+            cardContent.style.backgroundColor = '';
+            cardContent.style.color = '';
+        }
+    }
+}
+
+function handleEnd() {
+    if (!isDragging) return;
+    
+    isDragging = false;
+    cardContent.classList.remove('dragging');
+    
+    const diffX = currentX - startX;
+    const diffY = currentY - startY;
+
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+        if (diffX < -100) {
+            cardContent.classList.add('swiped-left');
+            updateCardStatus(false);
+            setTimeout(nextCard, 300);
+        } else if (diffX > 100) {
+            cardContent.classList.add('swiped-right');
+            updateCardStatus(true);
+            setTimeout(nextCard, 300);
+        } else {
+            cardContent.style.transform = '';
+            cardContent.style.backgroundColor = '';
+            cardContent.style.color = '';
+        }
+    } else {
+        if (diffY < -50) {
+            cardContent.classList.add('swiped-up');
+            setTimeout(() => {
+                toggleCardFace();
+                cardContent.classList.remove('swiped-up');
+                cardContent.style.transform = '';
+                cardContent.style.backgroundColor = '';
+                cardContent.style.color = '';
+            }, 300);
+        } else {
+            cardContent.style.transform = '';
+            cardContent.style.backgroundColor = '';
+            cardContent.style.color = '';
+        }
+    }
+}
+
+function setupSwipeEvents() {
+    // 重置滑动状态变量
+    startX = 0;
+    startY = 0;
+    currentX = 0;
+    currentY = 0;
+    isDragging = false;
+    
     cardContent.addEventListener('touchstart', handleStart, { passive: true });
     cardContent.addEventListener('mousedown', handleStart);
 
@@ -718,88 +950,8 @@ function setupSwipeEvents() {
     cardContent.addEventListener('mouseup', handleEnd);
     cardContent.addEventListener('mouseleave', handleEnd);
     
-    function handleStart(e) {
-        startX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
-        startY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
-        isDragging = true;
-        cardContent.classList.add('dragging');
-    }
-    
-    function handleMove(e) {
-        if (!isDragging) return;
-        
-        currentX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
-        currentY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
-        
-        const diffX = currentX - startX;
-        const diffY = currentY - startY;
-
-        if (Math.abs(diffX) > Math.abs(diffY)) {
-            cardContent.style.transform = `translateX(${diffX}px) rotate(${diffX * 0.05}deg)`;
-
-            if (diffX < -50) {
-                cardContent.style.backgroundColor = '#e74c3c';
-                cardContent.style.color = 'white';
-            } else if (diffX > 50) {
-                cardContent.style.backgroundColor = '#2ecc71';
-                cardContent.style.color = 'white';
-            } else {
-                cardContent.style.backgroundColor = '';
-                cardContent.style.color = '';
-            }
-        } else {
-            if (diffY < -30) {
-                cardContent.style.transform = `translateY(${diffY}px)`;
-                cardContent.style.backgroundColor = '#3498db';
-                cardContent.style.color = 'white';
-            } else {
-                cardContent.style.transform = '';
-                cardContent.style.backgroundColor = '';
-                cardContent.style.color = '';
-            }
-        }
-    }
-    
-    function handleEnd() {
-        if (!isDragging) return;
-        
-        isDragging = false;
-        cardContent.classList.remove('dragging');
-        
-        const diffX = currentX - startX;
-        const diffY = currentY - startY;
-
-        if (Math.abs(diffX) > Math.abs(diffY)) {
-            if (diffX < -100) {
-                cardContent.classList.add('swiped-left');
-                updateCardStatus(false);
-                setTimeout(nextCard, 300);
-            } else if (diffX > 100) {
-                cardContent.classList.add('swiped-right');
-                updateCardStatus(true);
-                setTimeout(nextCard, 300);
-            } else {
-                cardContent.style.transform = '';
-                cardContent.style.backgroundColor = '';
-                cardContent.style.color = '';
-            }
-        } else {
-            if (diffY < -50) {
-                cardContent.classList.add('swiped-up');
-                setTimeout(() => {
-                    toggleCardFace();
-                    cardContent.classList.remove('swiped-up');
-                    cardContent.style.transform = '';
-                    cardContent.style.backgroundColor = '';
-                    cardContent.style.color = '';
-                }, 300);
-            } else {
-                cardContent.style.transform = '';
-                cardContent.style.backgroundColor = '';
-                cardContent.style.color = '';
-            }
-        }
-    }
+    // 添加键盘事件监听器
+    document.addEventListener('keydown', handleKeyDown);
 }
 
 function updateCardStatus(known) {
@@ -842,6 +994,18 @@ function finishReview() {
     createSection.classList.remove('hidden');
     cardsListSection.classList.remove('hidden');
     reviewSection.classList.add('hidden');
+
+    // 移除键盘事件监听器
+    document.removeEventListener('keydown', handleKeyDown);
+    
+    // 移除滑动事件监听器
+    cardContent.removeEventListener('touchstart', handleStart);
+    cardContent.removeEventListener('mousedown', handleStart);
+    cardContent.removeEventListener('touchmove', handleMove);
+    cardContent.removeEventListener('mousemove', handleMove);
+    cardContent.removeEventListener('touchend', handleEnd);
+    cardContent.removeEventListener('mouseup', handleEnd);
+    cardContent.removeEventListener('mouseleave', handleEnd);
 
     renderCardsList();
 

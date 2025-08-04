@@ -78,8 +78,27 @@
         
         <div id="cards-list" class="section">
             <h2>Card List</h2>
+            <div id="cards-stats" class="cards-stats">
+                <span id="review-count">0</span> / <span id="total-count">0</span>
+            </div>
             <button id="start-review" class="btn">Review</button>
             <div id="cards-container"></div>
+        </div>
+        
+        <div id="edit-section" class="section hidden">
+            <h2>Edit Card</h2>
+            <div class="input-group">
+                <label for="edit-card-front">Front</label>
+                <textarea id="edit-card-front" placeholder="please enter the front content..."></textarea>
+            </div>
+            <div class="input-group">
+                <label for="edit-card-back">Back</label>
+                <textarea id="edit-card-back" placeholder="please enter the back content..."></textarea>
+            </div>
+            <div class="button-group">
+                <button id="save-edit" class="btn">Save</button>
+                <button id="cancel-edit" class="btn btn-secondary">Cancel</button>
+            </div>
         </div>
         
         <div id="review-section" class="section hidden">
@@ -87,9 +106,9 @@
                 <div id="card-content" class="card-content"></div>
             </div>
             <div id="swipe-instructions" class="swipe-instructions">
-                <div class="swipe-up">up - show/hide answer</div>
-                <div class="swipe-left">left - forget</div>
-                <div class="swipe-right">right - remember</div>
+                <div class="swipe-up">up/k - flip</div>
+                <div class="swipe-left">left/h - forget</div>
+                <div class="swipe-right">right/l - remember</div>
             </div>
         </div>
     </div>
