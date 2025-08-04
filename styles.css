@@ -210,6 +210,27 @@ textarea {
     color: #2ecc71;
 }
 
+/* 卡片统计信息 */
+.cards-stats {
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    font-size: 14px;
+    color: #6c757d;
+    text-align: center;
+}
+
+#total-count {
+    font-weight: bold;
+    color: #3498db;
+}
+
+#review-count {
+    font-weight: bold;
+    color: #2ecc71;
+}
+
 /* 卡片列表 */
 #cards-container {
     margin-bottom: 20px;
@@ -251,10 +272,15 @@ textarea {
     cursor: pointer;
     color: #7f8c8d;
     transition: color 0.3s;
+    margin-left: 5px;
 }
 
 .card-item-actions button:hover {
     color: #e74c3c;
+}
+
+.card-item-actions .edit-card:hover {
+    color: #3498db;
 }
 
 @media (max-width: 600px) {
