@@ -9,10 +9,114 @@ const cardsListSection = document.getElementById('cards-list');
 const reviewCard = document.getElementById('review-card');
 const cardContent = document.getElementById('card-content');
 
+const YOUDAO_API_BASE = 'http://dict.youdao.com/dictvoice';
+const AUDIO_CACHE_PREFIX = 'youdao_audio_';
+const AUDIO_CACHE_DURATION = 30 * 24 * 60 * 60 * 1000;
+
 let userStatus, loginButton, registerButton, logoutButton, syncButton;
 let loginSection, registerSection, syncSection;
 let loginSubmit, loginCancel, registerSubmit, registerCancel;
 let uploadCards, downloadCards, mergeCards, syncCancel;
+
+async function getYoudaoAudioUrl(word) {
+    const encodedWord = encodeURIComponent(word);
+    return `${YOUDAO_API_BASE}?audio=${encodedWord}&type=1`;
+}
+
+function getAudioCacheKey(word) {
+    return AUDIO_CACHE_PREFIX + word.toLowerCase();
+}
+
+function isAudioCached(word) {
+    const cacheKey = getAudioCacheKey(word);
+    const cached = localStorage.getItem(cacheKey);
+    if (!cached) return false;
+    
+    try {
+        const cacheData = JSON.parse(cached);
+        const now = Date.now();
+        return (now - cacheData.timestamp) < AUDIO_CACHE_DURATION;
+    } catch (e) {
+        return false;
+    }
+}
+
+function getCachedAudio(word) {
+    const cacheKey = getAudioCacheKey(word);
+    const cached = localStorage.getItem(cacheKey);
+    if (!cached) return null;
+    
+    try {
+        const cacheData = JSON.parse(cached);
+        return cacheData.audioData;
+    } catch (e) {
+        return null;
+    }
+}
+
+function cacheAudio(word, audioData) {
+    const cacheKey = getAudioCacheKey(word);
+    const cacheData = {
+        timestamp: Date.now(),
+        audioData: audioData
+    };
+    localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+}
+
+async function fetchYoudaoAudio(word) {
+    try {
+        const audioUrl = await getYoudaoAudioUrl(word);
+        const response = await fetch(audioUrl);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const arrayBuffer = await response.arrayBuffer();
+        const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        return `data:audio/mp3;base64,${base64Audio}`;
+    } catch (error) {
+        console.error('Failed to fetch Youdao audio:', error);
+        return null;
+    }
+}
+
+async function playYoudaoAudio(word) {
+    try {
+        // 检查本地缓存
+        if (isAudioCached(word)) {
+            const cachedAudio = getCachedAudio(word);
+            if (cachedAudio) {
+                await playAudioData(cachedAudio);
+                return true;
+            }
+        }
+        
+        // 从有道API获取音频
+        const audioData = await fetchYoudaoAudio(word);
+        if (audioData) {
+            // 缓存音频数据
+            cacheAudio(word, audioData);
+            // 播放音频
+            await playAudioData(audioData);
+            return true;
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('Error playing Youdao audio:', error);
+        return false;
+    }
+}
+
+function playAudioData(audioData) {
+    return new Promise((resolve, reject) => {
+        const audio = new Audio(audioData);
+        audio.onended = () => resolve();
+        audio.onerror = (error) => reject(error);
+        audio.play().catch(reject);
+    });
+}
 
 function initAuthElements() {
     userStatus = document.getElementById('user-status');
@@ -63,14 +167,23 @@ function updateCardsStats() {
     }
 }
 
-function speakText(text, options = {}) {
-    if (!speechSynthesis) {
-        console.log('Speech synthesis not supported');
-        return;
-    }
-
+async function speakText(text, options = {}) {
     const speechEnabled = document.getElementById('speech-enabled');
     if (speechEnabled && !speechEnabled.checked) {
+        return;
+    }
+    
+    try {
+        const success = await playYoudaoAudio(text);
+        if (success) {
+            return;
+        }
+    } catch (error) {
+        console.log('Youdao API failed, falling back to browser speech');
+    }
+    
+    if (!speechSynthesis) {
+        console.log('Speech synthesis not supported');
         return;
     }
     
@@ -810,6 +923,8 @@ function showCurrentCard() {
         pitch: 1.0,
         volume: 0.9,
         lang: 'en-US'
+    }).catch(error => {
+        console.error('Speech error:', error);
     });
     
 }
@@ -833,6 +948,8 @@ function toggleCardFace() {
             pitch: 1.0,
             volume: 0.9,
             lang: 'en-US'
+        }).catch(error => {
+            console.error('Speech error:', error);
         });
     } else {
         // 显示背面时，在顶端中间显示正面内容
@@ -1011,8 +1128,8 @@ function updateCardStatus(known) {
             date: Date.now(),
             known: false,
         });
-        if(card.fimilarity > 0) {
-            card.fimilarity /= 2;
+        if(card.fimilarity >= 1) {
+            card.fimilarity = Math.floor(card.fimilarity / 2);
         } else if(card.fimilarity > -3) {
             card.fimilarity--;
         }
