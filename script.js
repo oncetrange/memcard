@@ -9,7 +9,8 @@ const cardsListSection = document.getElementById('cards-list');
 const reviewCard = document.getElementById('review-card');
 const cardContent = document.getElementById('card-content');
 
-const YOUDAO_API_BASE = 'http://dict.youdao.com/dictvoice';
+const API_BASE_URL = 'https://117.72.179.137:3000/api'
+
 const AUDIO_CACHE_PREFIX = 'youdao_audio_';
 const AUDIO_CACHE_DURATION = 30 * 24 * 60 * 60 * 1000;
 
@@ -20,7 +21,7 @@ let uploadCards, downloadCards, mergeCards, syncCancel;
 
 async function getYoudaoAudioUrl(word) {
     const encodedWord = encodeURIComponent(word);
-    return `${YOUDAO_API_BASE}?audio=${encodedWord}&type=1`;
+    return `${API_BASE_URL}/youdao-audio?audio=${encodedWord}&type=1`;
 }
 
 function getAudioCacheKey(word) {
@@ -146,8 +147,6 @@ let currentUser = null;
 let authToken = localStorage.getItem('authToken') || null;
 let editingCardId = null;
 let speechSynthesis = window.speechSynthesis;
-
-const API_BASE_URL = 'https://117.72.179.137:3000/api'
 
 let isServerAvailable = false;
 
