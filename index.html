@@ -64,8 +64,11 @@
                 <button id="sync-cancel" class="btn btn-secondary">cancel</button>
             </div>
         </div>
-        <div id="create-section" class="section">
-            <h2>Create</h2>
+        <div id="create-section" class="section hidden">
+            <div class="create-header">
+                <h2>Create New Card</h2>
+                <button id="back-to-list" class="btn btn-secondary">Back</button>
+            </div>
             <div class="input-group">
                 <label for="card-front">Front</label>
                 <textarea id="card-front" placeholder="please enter the front content..."></textarea>
@@ -77,8 +80,12 @@
             <button id="save-card" class="btn">Save</button>
         </div>
         
+        
         <div id="cards-list" class="section">
-            <h2>Card List</h2>
+            <div class="cards-header">
+                <h2>Card List</h2>
+                <button id="add-card-btn" class="btn btn-add">+</button>
+            </div>
             <div id="cards-stats" class="cards-stats">
                 <span id="review-count">0</span> / <span id="total-count">0</span>
             </div>
@@ -118,6 +125,8 @@
                 <div class="swipe-right">right/l - remember</div>
             </div>
         </div>
+        <div id="gem-slots" class="gem-slots"></div>
+        <div id="card-preview" class="section hidden"></div>
     </div>
     
     <script src="script.js?v=1.0.1"></script>
