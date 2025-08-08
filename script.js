@@ -8,6 +8,7 @@ const createSection = document.getElementById('create-section');
 const cardsListSection = document.getElementById('cards-list');
 const reviewCard = document.getElementById('review-card');
 const cardContent = document.getElementById('card-content');
+const cardPreview = document.getElementById('card-preview');
 
 const API_BASE_URL = 'https://117.72.179.137:3000/api'
 
@@ -112,10 +113,20 @@ async function playYoudaoAudio(word) {
 
 function playAudioData(audioData) {
     return new Promise((resolve, reject) => {
+        isPlayingAudio = true;
         const audio = new Audio(audioData);
-        audio.onended = () => resolve();
-        audio.onerror = (error) => reject(error);
-        audio.play().catch(reject);
+        audio.onended = () => {
+            isPlayingAudio = false;
+            resolve();
+        };
+        audio.onerror = (error) => {
+            isPlayingAudio = false;
+            reject(error);
+        };
+        audio.play().catch((error) => {
+            isPlayingAudio = false;
+            reject(error);
+        });
     });
 }
 
@@ -147,6 +158,7 @@ let currentUser = null;
 let authToken = localStorage.getItem('authToken') || null;
 let editingCardId = null;
 let speechSynthesis = window.speechSynthesis;
+let isPlayingAudio = false;
 
 let isServerAvailable = false;
 
@@ -169,6 +181,10 @@ function updateCardsStats() {
 async function speakText(text, options = {}) {
     const speechEnabled = document.getElementById('speech-enabled');
     if (speechEnabled && !speechEnabled.checked) {
+        return;
+    }
+
+    if (isPlayingAudio) {
         return;
     }
     
@@ -194,6 +210,13 @@ async function speakText(text, options = {}) {
     utterance.pitch = options.pitch || 1.0;
     utterance.volume = options.volume || 0.8;
     utterance.lang = options.lang || 'en-US';
+    isPlayingAudio = true;
+    utterance.onend = () => {
+        isPlayingAudio = false;
+    };
+    utterance.onerror = () => {
+        isPlayingAudio = false;
+    };
     
     speechSynthesis.speak(utterance);
 }
@@ -236,9 +259,7 @@ function saveEdit() {
     document.getElementById('edit-card-front').value = '';
     document.getElementById('edit-card-back').value = '';
 
-    hideAllSections();
-    document.getElementById('create-section').classList.remove('hidden');
-    document.getElementById('cards-list').classList.remove('hidden');
+    showCardsList();
 }
 
 
@@ -247,9 +268,7 @@ function cancelEdit() {
     document.getElementById('edit-card-front').value = '';
     document.getElementById('edit-card-back').value = '';
     
-    hideAllSections();
-    document.getElementById('create-section').classList.remove('hidden');
-    document.getElementById('cards-list').classList.remove('hidden');
+    showCardsList();
 }
 
 async function checkServerAvailability() {
@@ -448,13 +467,19 @@ async function uploadCardsToServer() {
     }
     
     try {
+        const uploadData = {
+            cards: cards,
+            gemSlots: gemSlots,
+            gemTotal: gemTotal
+        };
+        
         const response = await fetch(`${API_BASE_URL}/cards`, {
             method: 'POST',
             headers: {
                 'Authorization': authToken,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(cards)
+            body: JSON.stringify(uploadData)
         });
         
         const data = await response.json();
@@ -466,7 +491,11 @@ async function uploadCardsToServer() {
         alert('Successfully uploaded!');
         return true;
     } catch (error) {
-        alert(error.message);
+        if (error.message.includes('413')) {
+            alert('Upload failed: Data too large. Please try with fewer cards or contact support.');
+        } else {
+            alert(error.message);
+        }
         return false;
     }
 }
@@ -494,12 +523,22 @@ async function downloadCardsFromServer() {
             throw new Error('Download failed!');
         }
         
-        const serverCards = await response.json();
+        const serverData = await response.json();
         
-        if (confirm('Download will cover local cards, continue?')) {
-            cards = serverCards;
+        if (confirm('Download will cover local data, continue?')) {
+            if (Array.isArray(serverData)) {
+                cards = serverData;
+                gemSlots = [0, 0, 0, 0, 0, 0];
+                gemTotal = [0, 0, 0, 0, 0, 0];
+            } else {
+                cards = serverData.cards || [];
+                gemSlots = serverData.gemSlots || [0, 0, 0, 0, 0, 0];
+                gemTotal = serverData.gemTotal || [0, 0, 0, 0, 0, 0];
+            }
+            
             saveCards();
             renderCardsList();
+            renderGemSlots();
             updateReviewButtonState();
             alert('Successfully downloaded!');
             return true;
@@ -532,8 +571,20 @@ async function mergeCardsWithServer() {
             throw new Error('Download cards failed.');
         }
         
-        const serverCards = await response.json();
+        const serverData = await response.json();
+
+        let serverCards = [];
+        let serverGemSlots = [0, 0, 0, 0, 0, 0];
+        let serverGemTotal = [0, 0, 0, 0, 0, 0];
         
+        if (Array.isArray(serverData)) {
+            serverCards = serverData;
+        } else {
+            serverCards = serverData.cards || [];
+            serverGemSlots = serverData.gemSlots || [0, 0, 0, 0, 0, 0];
+            serverGemTotal = serverData.gemTotal || [0, 0, 0, 0, 0, 0];
+        }
+
         const mergedCards = [...cards];
         const localCardIds = new Set(cards.map(card => card.id));
         
@@ -543,9 +594,15 @@ async function mergeCardsWithServer() {
             }
         }
         
+        for (let i = 0; i < 6; i++) {
+            gemSlots[i] = Math.max(gemSlots[i], serverGemSlots[i]);
+            gemTotal[i] = Math.max(gemTotal[i], serverGemTotal[i]);
+        }
+        
         cards = mergedCards;
         saveCards();
         renderCardsList();
+        renderGemSlots();
         updateReviewButtonState();
 
         await uploadCardsToServer();
@@ -601,12 +658,28 @@ function hideAllSections() {
     if (registerSection) registerSection.classList.add('hidden');
     if (syncSection) syncSection.classList.add('hidden');
     if (document.getElementById('edit-section')) document.getElementById('edit-section').classList.add('hidden');
+    if (cardPreview) cardPreview.classList.add('hidden');
+}
+
+function showCreateSection() {
+    hideAllSections();
+    createSection.classList.remove('hidden');
+    cardFrontInput.focus();
+}
+
+function showCardsList() {
+    hideAllSections();
+    cardsListSection.classList.remove('hidden');
 }
 
 function initApp() {
     initAuthElements();
-
+    loadScoreData();
+    
+    showCardsList();
+    
     renderCardsList();
+    renderGemSlots();
     updateReviewButtonState();
 
     checkServerAvailability().then(() => {
@@ -650,9 +723,7 @@ function initApp() {
     
     if (loginCancel) {
         loginCancel.addEventListener('click', () => {
-            hideAllSections();
-            createSection.classList.remove('hidden');
-            cardsListSection.classList.remove('hidden');
+            showCardsList();
             const usernameInput = document.getElementById('login-username');
             const passwordInput = document.getElementById('login-password');
             if (usernameInput) usernameInput.value = '';
@@ -684,9 +755,7 @@ function initApp() {
     
     if (registerCancel) {
         registerCancel.addEventListener('click', () => {
-            hideAllSections();
-            createSection.classList.remove('hidden');
-            cardsListSection.classList.remove('hidden');
+            showCardsList();
             const usernameInput = document.getElementById('register-username');
             const passwordInput = document.getElementById('register-password');
             const confirmInput = document.getElementById('register-confirm-password');
@@ -699,9 +768,7 @@ function initApp() {
     if (uploadCards) {
         uploadCards.addEventListener('click', async () => {
             if (await uploadCardsToServer()) {
-                hideAllSections();
-                createSection.classList.remove('hidden');
-                cardsListSection.classList.remove('hidden');
+                showCardsList();
             }
         });
     }
@@ -709,9 +776,7 @@ function initApp() {
     if (downloadCards) {
         downloadCards.addEventListener('click', async () => {
             if (await downloadCardsFromServer()) {
-                hideAllSections();
-                createSection.classList.remove('hidden');
-                cardsListSection.classList.remove('hidden');
+                showCardsList();
             }
         });
     }
@@ -719,25 +784,22 @@ function initApp() {
     if (mergeCards) {
         mergeCards.addEventListener('click', async () => {
             if (await mergeCardsWithServer()) {
-                hideAllSections();
-                createSection.classList.remove('hidden');
-                cardsListSection.classList.remove('hidden');
+                showCardsList();
             }
         });
     }
     
     if (syncCancel) {
         syncCancel.addEventListener('click', () => {
-            hideAllSections();
-            createSection.classList.remove('hidden');
-            cardsListSection.classList.remove('hidden');
+            showCardsList();
         });
     }
     
     // 编辑相关按钮事件监听器
     const saveEditButton = document.getElementById('save-edit');
     const cancelEditButton = document.getElementById('cancel-edit');
-    
+    const addCardButton = document.getElementById('add-card-btn');
+    const backToListButton = document.getElementById('back-to-list');
     if (saveEditButton) {
         saveEditButton.addEventListener('click', saveEdit);
     }
@@ -745,28 +807,128 @@ function initApp() {
     if (cancelEditButton) {
         cancelEditButton.addEventListener('click', cancelEdit);
     }
+    
+    if (addCardButton) {
+        addCardButton.addEventListener('click', showCreateSection);
+    }
+    
+    if (backToListButton) {
+        backToListButton.addEventListener('click', showCardsList);
+    }
+}
+
+let gemSlots = [0, 0, 0, 0, 0, 0];
+let gemTotal = [0, 0, 0, 0, 0, 0];
+const GEM_COLORS = [
+    '#3b6fff', // blue
+    '#00e0e0', // cyan
+    '#3edc6a', // green
+    '#ffe14b', // yellow
+    '#ff4b4b', // red
+    '#ff7ad9'  // pink
+];
+const GEM_IMAGES = [
+    'assets/images/blue.svg',
+    'assets/images/cyan.svg',
+    'assets/images/green.svg',
+    'assets/images/yellow.svg',
+    'assets/images/red.svg',
+    'assets/images/pink.svg',
+];
+
+function getRandomGems(count) {
+    const gems = [];
+    for (let i = 0; i < count; i++) {
+        const randomIndex = Math.floor(Math.random() * 6);
+        gems.push({
+            index: randomIndex,
+            isNew: false
+        });
+    }
+    return gems;
+}
+
+function getGemPath(gemIndex) {
+    return GEM_IMAGES[gemIndex] || '';
+}
+
+function getGemName(gemIndex) {
+    const path = getGemPath(gemIndex);
+    return path.split('/').pop().replace('.svg', '');
+}
+
+function showCardPreview(front, gemlist) {
+    if (!cardPreview) return;
+    
+    // 处理宝石数据
+    const sortedGems = [...gemlist].sort((a, b) => {
+        return a.index - b.index;
+    });
+    
+    const gemHTML = sortedGems.map(gemData => 
+        `<img src="${getGemPath(gemData.index)}" alt="gem" title="${getGemName(gemData.index)}">`
+    ).join('');
+    
+    const gemCount = gemlist.length;
+    let effectClass = '';
+    let aniDuration = 1500;
+    if (gemCount === 2) {
+        effectClass = 'preview-2-gems';
+        aniDuration = 2000;
+    } else if (gemCount === 3) {
+        effectClass = 'preview-3-gems';
+        aniDuration = 3000;
+    }
+    cardPreview.innerHTML = `
+        <div class="gem-container">
+            ${gemHTML}
+        </div>
+        <div class="card-preview-front">${front}</div>
+    `;
+    if (effectClass!='') cardPreview.classList.add(effectClass);
+    cardPreview.classList.add('show');
+    cardPreview.classList.remove('hidden');
+    setTimeout(() => {
+        cardPreview.classList.remove('show');
+        setTimeout(() => {
+            if (effectClass!='') cardPreview.classList.remove(effectClass);
+            cardPreview.classList.add('hidden');
+            cardPreview.innerHTML = '';
+        }, 800);
+    }, aniDuration);
+    
 }
 
 saveCardButton.addEventListener('click', () => {
     const front = cardFrontInput.value.trim();
     const back = cardBackInput.value.trim();
-    
     if (front && back) {
+        const random = Math.random();
+        let gemCount;
+        if (random < 0.84) {
+            gemCount = 1;
+        } else if (random < 0.99) {
+            gemCount = 2;
+        } else {
+            gemCount = 3;
+        }
+        gemlist = getRandomGems(gemCount);
+        gemlist = [...gemlist].sort((a, b) => a.index - b.index);
         const newCard = {
             id: Date.now(),
             front,
             back,
+            gem: gemlist,
             lastReviewed: null,
             history: [],
             fimilarity: 0,
             nextReviewDate: Date.now(),
         };
-        
         cards.push(newCard);
         saveCards();
         renderCardsList();
         updateReviewButtonState();
-
+        showCardPreview(front, gemlist);
         cardFrontInput.value = '';
         cardBackInput.value = '';
         cardFrontInput.focus();
@@ -802,6 +964,18 @@ function renderCardsList() {
         } else {
             nextReviewText = `Next Review: ${-Math.round(time/(24 * 60 * 60 * 1000))} days ago`;
         }
+        
+        // 渲染宝石
+        const gemHTML = card.gem && card.gem.length > 0 ? 
+            `<div class="card-item-gems">
+                ${card.gem.map(gemData => {
+                    const gemIndex = gemData.index;
+                    const isNewGem = gemData.isNew;
+                    const gemClass = isNewGem ? 'new-gem' : '';
+                    return `<img src="${getGemPath(gemIndex)}" alt="gem" title="${getGemName(gemIndex)}" class="${gemClass}">`;
+                }).join('')}
+            </div>` : '<div class="card-item-gems"></div>';
+        
         cardElement.innerHTML = `
             <div class="card-item-content">
                 <div class="card-item-front">${card.front}</div>
@@ -810,6 +984,7 @@ function renderCardsList() {
                     ${lastReviewedText} | ${nextReviewText}
                 </div>
             </div>
+            ${gemHTML}
             <div class="card-item-actions">
                 <button class="edit-card" data-id="${card.id}">edit</button>
                 <button class="delete-card" data-id="${card.id}">delete</button>
@@ -847,6 +1022,20 @@ function deleteCard(id) {
 
 function saveCards() {
     localStorage.setItem('memoryCards', JSON.stringify(cards));
+    localStorage.setItem('gemSlots', JSON.stringify(gemSlots));
+    localStorage.setItem('gemTotal', JSON.stringify(gemTotal));
+}
+
+function loadScoreData() {
+    const savedGemSlots = localStorage.getItem('gemSlots');
+    const savedGemTotal = localStorage.getItem('gemTotal');
+    
+    if (savedGemSlots) {
+        gemSlots = JSON.parse(savedGemSlots);
+    }
+    if (savedGemTotal) {
+        gemTotal = JSON.parse(savedGemTotal);
+    }
 }
 
 function updateReviewButtonState() {
@@ -904,9 +1093,6 @@ function showCurrentCard() {
         finishReview();
         return;
     }
-    
-    const card = reviewCards[currentCardIndex];
-    cardContent.textContent = card.front;
     cardContent.style.display = 'flex';
     cardContent.style.alignItems = 'center';
     cardContent.style.justifyContent = 'center';
@@ -914,44 +1100,155 @@ function showCurrentCard() {
     cardContent.style.transform = '';
     cardContent.style.backgroundColor = '';
     cardContent.style.color = '';
+    isShowingAnswer = true;
     
-    isShowingAnswer = false;
+    toggleCardFace(true);
+}
 
-    speakText(card.front, {
-        rate: 0.7,
-        pitch: 1.0,
-        volume: 0.9,
-        lang: 'en-US'
-    }).catch(error => {
-        console.error('Speech error:', error);
+function renderGemSlots() {
+    const gemSlotsDiv = document.getElementById('gem-slots');
+    if (!gemSlotsDiv) return;
+    gemSlotsDiv.innerHTML = '';
+    for (let i = 0; i < 6; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'gem-slot';
+        slot.innerHTML = `
+            <img class="gem-slot-img" src="${getGemPath(i)}" alt="gem">
+            <div class="gem-slot-score" style="color:${GEM_COLORS[i]};font-size:12px">${gemTotal[i]}</div>
+            <div class="gem-slot-glow" id="gem-slot-glow-${i}"></div>
+            <div class="gem-slot-cover" id="gem-slot-cover-${i}"></div>
+        `;
+        
+        // 鼠标悬浮显示槽位分数
+        slot.addEventListener('mouseenter', () => {
+            const scoreTooltip = document.createElement('div');
+            scoreTooltip.className = 'score-tooltip';
+            scoreTooltip.textContent = `${gemSlots[i]}`;
+            scoreTooltip.style.color = GEM_COLORS[i];
+            slot.appendChild(scoreTooltip);
+        });
+        
+        slot.addEventListener('mouseleave', () => {
+            const tooltip = slot.querySelector('.score-tooltip');
+            if (tooltip) {
+                tooltip.remove();
+            }
+        });
+        
+        gemSlotsDiv.appendChild(slot);
+    }
+    updateGemSlotCovers();
+}
+
+function updateGemSlotCovers() {
+    for (let i = 0; i < 6; i++) {
+        const cover = document.getElementById(`gem-slot-cover-${i}`);
+        if (cover) {
+            // 计算遮盖高度，基于当前槽位分数
+            const maxScore = 50;
+            const currentScore = gemSlots[i];
+            const fillPercentage = Math.min(currentScore / maxScore, 1);
+            cover.style.height = `${24 * (1 - fillPercentage)}px`;
+        }
+    }
+}
+
+function renderGemGlowDots(container, gemIndex, smallCount, bigCount) {
+    for (let i = 0; i < smallCount; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'gem-glow-dot';
+        const angle = i / smallCount * 2 * Math.PI;
+        const radius = 16;
+        dot.style.width = '4px';
+        dot.style.height = '4px';
+        dot.style.background = GEM_COLORS[gemIndex];
+        dot.style.left = `${14 + Math.sin(angle) * radius}px`;
+        dot.style.top = `${14 - Math.cos(angle) * radius}px`;
+        dot.style.filter = `blur(1.5px)`;
+        dot.style.animationDuration = `3s`;
+        container.appendChild(dot);
+    }
+    bigCount = Math.min(24, bigCount);
+    for (let i = 0; i < bigCount; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'gem-glow-dot';
+        const angle = i / bigCount * 2 * Math.PI;
+        const radius = 12;
+        dot.style.width = '12px';
+        dot.style.height = '12px';
+        dot.style.background = GEM_COLORS[gemIndex];
+        dot.style.left = `${12 + Math.sin(angle) * radius}px`;
+        dot.style.top = `${12 - Math.cos(angle) * radius}px`;
+        dot.style.filter = `blur(2.5px)`;
+        dot.style.opacity = 0.7;
+        dot.style.animationDuration = `4s`;
+        container.appendChild(dot);
+    }
+}
+
+function renderCardFrontGems(gemlist, lastReviewed) {
+    let html = '<div class="gem-container">';
+    gemlist.forEach((gemData, gemPosition) => {
+        const gemIndex = gemData.index;
+        const isNewGem = gemData.isNew;
+        
+        const gemClass = isNewGem ? 'gem-with-glow new-gem' : 'gem-with-glow';
+        const gemStyle = isNewGem ? 'position:relative;width:32px;height:32px;opacity:0;animation:fadeInGem 0.8s ease-out forwards;' : 'position:relative;width:32px;height:32px;';
+        
+        html += `<div class="${gemClass}" style="${gemStyle}">
+            <img src="${getGemPath(gemIndex)}">
+            ${!isNewGem ? `<div class="gem-glow-dots" id="gem-glow-dots-${gemIndex}-${gemPosition}" style="position:absolute;left:0;top:0;width:32px;height:32px;z-index:1;"></div>` : ''}
+        </div>`;
     });
-    
+    html += '</div>';
+    return html;
 }
 
 // switch front/back
-function toggleCardFace() {
+function toggleCardFace(speakflag) {
     if (currentCardIndex >= reviewCards.length) return;
     
     const card = reviewCards[currentCardIndex];
     
     if (isShowingAnswer) {
-        cardContent.textContent = card.front;
+        // 渲染宝石和光点
+        const card = reviewCards[currentCardIndex];
+        if (card && card.gem && Array.isArray(card.gem)) {
+            cardContent.innerHTML = renderCardFrontGems(card.gem, card.lastReviewed) + `<div style='width:100%;text-align:center;'>${card.front}</div>`;
+            const interval = card.lastReviewed ? Math.max(0, card.nextReviewDate - card.lastReviewed - 1) : 0;
+            hours = Math.floor(interval / (1000 * 60 * 60));
+            days = Math.floor(interval / (1000 * 60 * 60 * 24));
+            card.gem.forEach((gemData, gemPosition) => {
+                const gemIndex = typeof gemData === 'number' ? gemData : gemData.index;
+                const isNewGem = typeof gemData === 'object' && gemData.isNew;
+                
+                if (!isNewGem) {
+                    const dotsContainer = document.getElementById(`gem-glow-dots-${gemIndex}-${gemPosition}`);
+                    if (dotsContainer) {
+                        dotsContainer.innerHTML = '';
+                        renderGemGlowDots(dotsContainer, gemIndex, 1 + hours % 24, days);
+                    }
+                }
+            });
+        } else {
+            cardContent.textContent = card.front;
+        }
+        renderGemSlots();
         cardContent.style.display = 'flex';
         cardContent.style.alignItems = 'center';
         cardContent.style.justifyContent = 'center';
         isShowingAnswer = false;
-        
-        // 播放正面内容
-        speakText(card.front, {
-            rate: 0.7,
-            pitch: 1.0,
-            volume: 0.9,
-            lang: 'en-US'
-        }).catch(error => {
-            console.error('Speech error:', error);
-        });
+        if (speakflag){
+            speakText(card.front, {
+                rate: 0.7,
+                pitch: 1.0,
+                volume: 0.9,
+                lang: 'en-US'
+            }).catch(error => {
+                console.error('Speech error:', error);
+            });
+        }
     } else {
-        // 显示背面时，在顶端中间显示正面内容
         cardContent.innerHTML = `
             <div style="position: absolute; top: 0; left: 0; right: 0; text-align: center; font-size: 0.8em; color: #666; padding: 10px; border-bottom: 1px solid #eee; background-color: rgba(255,255,255,0.9); border-radius: 10px 10px 0 0;">
                 ${card.front}
@@ -982,7 +1279,7 @@ function handleKeyDown(e) {
             e.preventDefault();
             cardContent.classList.add('swiped-up');
             setTimeout(() => {
-                toggleCardFace();
+                toggleCardFace(true);
                 cardContent.classList.remove('swiped-up');
                 cardContent.style.transform = '';
                 cardContent.style.backgroundColor = '';
@@ -1073,7 +1370,7 @@ function handleEnd() {
         if (diffY < -50) {
             cardContent.classList.add('swiped-up');
             setTimeout(() => {
-                toggleCardFace();
+                toggleCardFace(true);
                 cardContent.classList.remove('swiped-up');
                 cardContent.style.transform = '';
                 cardContent.style.backgroundColor = '';
@@ -1109,16 +1406,135 @@ function setupSwipeEvents() {
     document.addEventListener('keydown', handleKeyDown);
 }
 
+// 宝石光点飞行动画
+function flyGemGlowToSlot(gemIndex, gemPosition, cb) {
+    const gemSlotsDiv = document.getElementById('gem-slots');
+    if (!gemSlotsDiv) return;
+    const slot = gemSlotsDiv.children[gemIndex];
+    if (!slot) return;
+    const toRect = slot.getBoundingClientRect();
+    
+    // 获取已有的光点容器
+    const dotsContainer = document.getElementById(`gem-glow-dots-${gemIndex}-${gemPosition}`);
+    if (!dotsContainer) {
+        cb();
+        return;
+    }
+    // 获取所有已有的光点
+    const existingDots = dotsContainer.querySelectorAll('.gem-glow-dot');
+    if (existingDots.length === 0) return;
+    
+    let completedFlights = 0;
+    const totalDots = existingDots.length;
+    
+    // 为每个光点创建飞行动画
+    existingDots.forEach((dot, index) => {
+        const dotRect = dot.getBoundingClientRect();
+        dot.style.animationPlayState = 'paused';
+
+        dot.style.position = 'fixed';
+        dot.style.left = `${dotRect.left}px`;
+        dot.style.top = `${dotRect.top}px`;
+        dot.style.zIndex = 9999;
+        dot.style.transition = 'all 0.7s cubic-bezier(.7,-0.2,.7,1.2)';
+
+        document.body.appendChild(dot);
+
+        setTimeout(() => {
+            dot.style.left = `${toRect.left + toRect.width/2}px`;
+            dot.style.top = `${toRect.top + toRect.height/2}px`;
+            
+        }, 10 + index * 50); // 每个光点延迟50ms，创造波浪效果
+
+        setTimeout(() => {
+            document.body.removeChild(dot);
+            completedFlights++;
+            
+            // 所有光点都飞行完成后回调
+            if (completedFlights === totalDots && cb) {
+                cb();
+            }
+        }, 750 + index * 50);
+    });
+}
+
+function handleGemScoreOnKnown(card) {
+    if (!card.gem || !Array.isArray(card.gem)) return;
+
+    const interval = card.lastReviewed ? Math.max(0, card.nextReviewDate - card.lastReviewed - 1) : 0;
+    const hours = Math.floor(interval / (1000 * 60 * 60));
+    const days = Math.floor(interval / (1000 * 60 * 60 * 24));
+    
+    let completedGems = 0;
+    const totalGems = card.gem.length;
+    
+    card.gem.forEach((gemData, gemPosition) => {
+        const gemIndex = gemData.index;
+        const isNewGem = gemData.isNew;
+
+        if (isNewGem) {
+            completedGems++;
+            if (completedGems === totalGems) {
+                renderGemSlots();
+                updateGemSlotCovers();
+            }
+            return;
+        }
+        
+        flyGemGlowToSlot(gemIndex, gemPosition, () => {
+            let addScore = (hours % 24) + 1 + days * 24;
+            gemSlots[gemIndex] += addScore;
+            gemTotal[gemIndex] += addScore;
+            if (gemSlots[gemIndex] >= 50) {
+                if (reviewCards[currentCardIndex]) {
+                    if (!reviewCards[currentCardIndex].gem) reviewCards[currentCardIndex].gem = [];
+                    gemlist = reviewCards[currentCardIndex].gem;
+                    gemSlots[gemIndex] -= 50;
+                    // 添加新宝石，标记为新增（无光点环绕且不计入得分）
+                    gemlist.push({
+                        index: gemIndex,
+                        isNew: true,
+                    });
+                    gemlist = [...gemlist].sort((a, b) => {
+                        return a.index - b.index;
+                    });
+                    reviewCards[currentCardIndex].gem = gemlist;
+                    isShowingAnswer = true;
+                    toggleCardFace(false);
+                    saveCards();
+                }
+            }
+            completedGems++;
+            if (completedGems === totalGems) {
+                renderGemSlots();
+                updateGemSlotCovers();
+            }
+        });
+    });
+}
+
 function updateCardStatus(known) {
     const card = reviewCards[currentCardIndex];
-    card.lastReviewed = Date.now();
+    if(isShowingAnswer){
+        toggleCardFace(false);
+    }
     
     if (known) {
+        handleGemScoreOnKnown(card);
+        if (card.gem && Array.isArray(card.gem)) {
+            card.gem = card.gem.map(gemData => {
+                if (gemData.isNew) {
+                    gemData.isNew = false;
+                }
+                return gemData;
+            });
+        }
         card.history.push({
             date: Date.now(),
             known: true,
         });
         card.nextReviewDate = Date.now() + 1000 * 60 * 60 * 6 * Math.pow(2, card.fimilarity);
+        card.lastReviewed = Date.now() + 1;
         if(card.fimilarity >= 0) {
             card.fimilarity++;
         } else {card.fimilarity = 0;}
@@ -1136,7 +1552,6 @@ function updateCardStatus(known) {
         const insertPosition = Math.min(randomPosition, reviewCards.length);
         reviewCards.splice(insertPosition, 0, card);
     }
-    
     saveCards();
 }
 
@@ -1146,9 +1561,7 @@ function nextCard() {
 }
 
 function finishReview() {
-    createSection.classList.remove('hidden');
-    cardsListSection.classList.remove('hidden');
-    reviewSection.classList.add('hidden');
+    showCardsList();
 
     // 移除键盘事件监听器
     document.removeEventListener('keydown', handleKeyDown);
