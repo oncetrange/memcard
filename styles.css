@@ -423,6 +423,57 @@ textarea {
     z-index: 1;
 }
 
+/* Review session summary overlay */
+.session-summary {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .35s ease;
+}
+.session-summary.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+.session-summary-card {
+  width: min(92vw, 520px);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  padding: 20px 22px;
+  animation: cardPop .4s ease;
+}
+.session-summary-stars {
+  text-align: center;
+  font-size: 22px;
+  margin-bottom: 10px;
+}
+.session-summary-metrics {
+  font-size: 14px;
+  color: #34495e;
+}
+.session-summary-metrics div {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px dashed #eee;
+}
+.session-summary-metrics div:last-child { border-bottom: none; }
+.session-summary-rewards {
+  margin-top: 12px;
+  display: flex;
+  font-size: 14px;
+  color: #2d3436;
+}
+@keyframes cardPop {
+  0% { transform: translateY(12px) scale(.98); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
 /* 卡片预览宝石数量视觉效果 */
 #card-preview.preview-2-gems {
     background: linear-gradient(135deg, #5473ff40 0%, #d4aaff40 100%);
@@ -593,7 +644,7 @@ textarea {
     border-radius: 6px;
     font-size: 8px;
     white-space: nowrap;
-    z-index: 1000;
+    z-index: 8;
     pointer-events: none;
     animation: fadeIn 0.2s ease-in;
 }

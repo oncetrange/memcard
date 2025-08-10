@@ -14,6 +14,7 @@ const API_BASE_URL = 'https://117.72.179.137:3000/api'
 
 const AUDIO_CACHE_PREFIX = 'youdao_audio_';
 const AUDIO_CACHE_DURATION = 30 * 24 * 60 * 60 * 1000;
+const AUDIO_CACHE_MAX_ENTRIES = 200;
 
 let userStatus, loginButton, registerButton, logoutButton, syncButton;
 let loginSection, registerSection, syncSection;
@@ -37,7 +38,12 @@ function isAudioCached(word) {
     try {
         const cacheData = JSON.parse(cached);
         const now = Date.now();
-        return (now - cacheData.timestamp) < AUDIO_CACHE_DURATION;
+        const valid = (now - cacheData.timestamp) < AUDIO_CACHE_DURATION;
+        if (!valid) {
+            // 过期立即清理，释放空间
+            localStorage.removeItem(cacheKey);
+        }
+        return valid;
     } catch (e) {
         return false;
     }
@@ -56,13 +62,109 @@ function getCachedAudio(word) {
     }
 }
 
+function isQuotaExceededError(err) {
+    if (!err) return false;
+    return (
+        err.name === 'QuotaExceededError' ||
+        err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        err.code === 22 ||
+        err.code === 1014
+    );
+}
+
+function getAllAudioCacheEntries() {
+    const entries = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith(AUDIO_CACHE_PREFIX)) continue;
+        try {
+            const raw = localStorage.getItem(key);
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (!parsed || typeof parsed.timestamp !== 'number') continue;
+            const size = raw ? raw.length : 0;
+            entries.push({ key, timestamp: parsed.timestamp, size });
+        } catch (_) {
+            // 格式异常直接移除
+            localStorage.removeItem(key);
+        }
+    }
+    return entries;
+}
+
+function pruneExpiredAudioCache() {
+    const now = Date.now();
+    const entries = getAllAudioCacheEntries();
+    for (const { key, timestamp } of entries) {
+        if (now - timestamp >= AUDIO_CACHE_DURATION) {
+            localStorage.removeItem(key);
+        }
+    }
+}
+
+function pruneOldestAudioCache(count = 5) {
+    const entries = getAllAudioCacheEntries();
+    entries.sort((a, b) => a.timestamp - b.timestamp);
+    for (let i = 0; i < Math.min(count, entries.length); i++) {
+        localStorage.removeItem(entries[i].key);
+    }
+}
+
+function enforceAudioCacheEntryLimit() {
+    const entries = getAllAudioCacheEntries();
+    if (entries.length <= AUDIO_CACHE_MAX_ENTRIES) return;
+    entries.sort((a, b) => a.timestamp - b.timestamp);
+    const overflow = entries.length - AUDIO_CACHE_MAX_ENTRIES;
+    for (let i = 0; i < overflow; i++) {
+        localStorage.removeItem(entries[i].key);
+    }
+}
+
 function cacheAudio(word, audioData) {
     const cacheKey = getAudioCacheKey(word);
     const cacheData = {
         timestamp: Date.now(),
         audioData: audioData
     };
-    localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+    // 优先清理过期项与超额项
+    try {
+        enforceAudioCacheEntryLimit();
+        localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+        return;
+    } catch (err) {
+        if (!isQuotaExceededError(err)) {
+            console.warn('Cache audio failed (non-quota):', err);
+            return;
+        }
+    }
+
+    // 第一次失败：移除过期项后重试
+    try {
+        pruneExpiredAudioCache();
+        enforceAudioCacheEntryLimit();
+        localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+        return;
+    } catch (err2) {
+        if (!isQuotaExceededError(err2)) {
+            console.warn('Cache audio failed after pruneExpired:', err2);
+            return;
+        }
+    }
+
+    // 仍失败：按时间最早移除一批后多次重试
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            pruneOldestAudioCache(10);
+            enforceAudioCacheEntryLimit();
+            localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+            return;
+        } catch (err3) {
+            if (!isQuotaExceededError(err3)) {
+                console.warn('Cache audio failed after pruneOldest:', err3);
+                return;
+            }
+        }
+    }
+    console.warn('Cache audio skipped: storage quota exceeded after multiple attempts');
 }
 
 async function fetchYoudaoAudio(word) {
@@ -1059,6 +1161,10 @@ startReviewButton.addEventListener('click', () => {
         isShowingAnswer = false;
         setupSwipeEvents();
         showCurrentCard();
+
+        // start session metrics
+        sessionStartMs = Date.now();
+        sessionUnknownCount = 0;
     }
 });
 
@@ -1226,7 +1332,7 @@ function toggleCardFace(speakflag) {
                     const dotsContainer = document.getElementById(`gem-glow-dots-${gemIndex}-${gemPosition}`);
                     if (dotsContainer) {
                         dotsContainer.innerHTML = '';
-                        renderGemGlowDots(dotsContainer, gemIndex, 1 + hours % 24, days);
+                        renderGemGlowDots(dotsContainer, gemIndex, 1 + Math.min(hours, 24), days);
                     }
                 }
             });
@@ -1300,6 +1406,10 @@ let startY = 0;
 let currentX = 0;
 let currentY = 0;
 let isDragging = false;
+
+// Review session metrics
+let sessionStartMs = 0;
+let sessionUnknownCount = 0;
 
 function handleStart(e) {
     startX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
@@ -1482,7 +1592,7 @@ function handleGemScoreOnKnown(card) {
         }
         
         flyGemGlowToSlot(gemIndex, gemPosition, () => {
-            let addScore = (hours % 24) + 1 + days * 24;
+            let addScore = Math.min(hours, 24) + 1 + days * 2;
             gemSlots[gemIndex] += addScore;
             gemTotal[gemIndex] += addScore;
             if (gemSlots[gemIndex] >= 50) {
@@ -1515,6 +1625,8 @@ function handleGemScoreOnKnown(card) {
 
 function updateCardStatus(known) {
     const card = reviewCards[currentCardIndex];
+    // track metrics
+    if (!known) sessionUnknownCount += 1;
     if(isShowingAnswer){
         toggleCardFace(false);
     }
@@ -1577,7 +1689,104 @@ function finishReview() {
 
     renderCardsList();
 
-    alert('✅');
+    // show session summary overlay instead of alert
+    showSessionSummary();
+}
+
+function msToHuman(ms) {
+    const sec = Math.round(ms / 1000);
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}m ${s}s`;
+}
+
+function showSessionSummary() {
+    const overlay = document.getElementById('session-summary');
+    if (!overlay) return;
+    const starsEl = document.getElementById('session-stars');
+    const totalTimeEl = document.getElementById('session-total-time');
+    const unknownEl = document.getElementById('session-unknown-count');
+    const avgEl = document.getElementById('session-avg-time');
+    const rewardsEl = document.getElementById('session-rewards');
+
+    const endMs = Date.now();
+    const totalMs = Math.max(0, endMs - sessionStartMs);
+    const avgMs = totalMs / (sessionUnknownCount + 20) > 0;
+
+    // star logic: <=2s ★★★, <=4s ★★, else ★
+    let stars = 1;
+    if (avgMs <= 3000) stars = 3; else if (avgMs <= 5000) stars = 2;
+    if (sessionUnknownCount <= 15) stars += 2; else if (sessionUnknownCount <= 25) stars += 1;
+    const originalIndex = Math.floor(Math.random() * 6);
+    const starPath = getGemPath(originalIndex);
+    const starHTML = `<img src="${starPath}" alt="gem">`.repeat(stars);
+
+    if (starsEl) starsEl.innerHTML = starHTML;
+    if (totalTimeEl) totalTimeEl.textContent = msToHuman(totalMs);
+    if (unknownEl) unknownEl.textContent = String(sessionUnknownCount);
+    if (avgEl) avgEl.textContent = msToHuman(avgMs);
+
+    // rewards based on stars: grant extra gem slot points
+    // 3★: +6 each slot, 2★: +3, 1★: +1 distributed to random slot
+    let rewardHTML = `<span style='margin-right: auto'>Rewards: </span>`;
+    if (stars === 5) {
+        
+        for (let i = 0; i < 3; i++) {
+            amount = 20 + Math.floor(Math.random() * 30);
+            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1)) + i) % 6;
+            gemSlots[gemIndex] += amount;
+            rewardHTML += `<span style='color:${GEM_COLORS[gemIndex]}'>${amount}</span>
+            <img src="${getGemPath(gemIndex)}" alt = "gem" style='height: 16px; width: 16px; align-self: center;'>`;
+        }
+    } else if (stars === 4) {
+        for (let i = 0; i < 2; i++) {
+            amount = 15 + Math.floor(Math.random() * 20);
+            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1)) + i) % 6;
+            gemSlots[gemIndex] += amount;
+            rewardHTML += `<span style='color:${GEM_COLORS[gemIndex]}'>${amount}</span>
+            <img src="${getGemPath(gemIndex)}" alt = "gem" style='height: 16px; width: 16px; align-self: center;'>`;
+        }
+    } else if (stars === 3) {
+        for (let i = 0; i < 3; i++) {
+            amount = 5 + Math.floor(Math.random() * 10);
+            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1)) + i) % 6;
+            gemSlots[gemIndex] += amount;
+            rewardHTML += `<span style='color:${GEM_COLORS[gemIndex]}'>${amount}</span>
+            <img src="${getGemPath(gemIndex)}" alt = "gem" style='height: 16px; width: 16px; align-self: center;'>`;
+        }
+    } else if (stars === 2) {
+        for (let i = 0; i < 2; i++) {
+            amount = 2 + Math.floor(Math.random() * 6);
+            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1)) + i) % 6;
+            gemSlots[gemIndex] += amount;
+            rewardHTML += `<span style='color:${GEM_COLORS[gemIndex]}'>${amount}</span>
+            <img src="${getGemPath(gemIndex)}" alt = "gem" style='height: 16px; width: 16px; align-self: center;'>`;
+        }
+    } else {
+        for (let i = 0; i < 1; i++) {
+            amount = 1 + Math.floor(Math.random() * 6);
+            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1)) + i) % 6;
+            gemSlots[gemIndex] += amount;
+            rewardHTML += `<span style='color:${GEM_COLORS[gemIndex]}'>${amount}</span>
+            <img src="${getGemPath(gemIndex)}" alt = "gem" style='height: 16px; width: 16px; align-self: center;'>`;
+        }
+    }
+    saveCards();
+    renderGemSlots();
+    if (rewardsEl) rewardsEl.innerHTML = rewardHTML;
+
+    overlay.classList.remove('hidden');
+    requestAnimationFrame(() => {
+        overlay.classList.add('show');
+    });
+
+    // setTimeout(() => {
+    //     overlay.classList.remove('show');
+    //     setTimeout(() => {
+    //         overlay.classList.add('hidden');
+    //     }, 350);
+    // }, 5000);
 }
 
 initApp();
