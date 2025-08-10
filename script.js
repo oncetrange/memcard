@@ -917,6 +917,9 @@ function initApp() {
     if (backToListButton) {
         backToListButton.addEventListener('click', showCardsList);
     }
+
+    // 添加键盘事件监听器
+    document.addEventListener('keydown', handleKeyDown);
 }
 
 let gemSlots = [0, 0, 0, 0, 0, 0];
@@ -1372,6 +1375,78 @@ function toggleCardFace(speakflag) {
 
 // 键盘事件处理函数
 function handleKeyDown(e) {
+    // 如果总结窗显示，只处理关闭操作
+    const sessionSummary = document.getElementById('session-summary');
+    if (sessionSummary && !sessionSummary.classList.contains('hidden')) {
+        if (e.key.toLowerCase() === 'w' || e.key === 'Escape') {
+            e.preventDefault();
+            closeSessionSummary();
+        }
+        return;
+    }
+
+    // 如果在新建卡片，esc返回
+    if (createSection && !createSection.classList.contains('hidden')) {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            showCardsList();
+        }
+        return;
+    }
+
+    // 如果在同步界面，u: upload, d: download, m: merge, esc: close
+    if (syncSection && !syncSection.classList.contains('hidden')) {
+        switch(e.key.toLowerCase()) {
+            case 'u':
+                e.preventDefault();
+                uploadCardsToServer();
+                break;
+            case 'd':
+                e.preventDefault();
+                downloadCardsFromServer();
+                break;
+            case 'm':
+                e.preventDefault();
+                mergeCardsToLocal();
+                break;
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            showCardsList();
+        }
+        return;
+    }
+
+    // 如果在列表界面，处理快捷操作
+    if (cardsListSection && !cardsListSection.classList.contains('hidden')) {
+        switch(e.key.toLowerCase()) {
+            case 'r':
+                e.preventDefault();
+                if (!startReviewButton.disabled) {
+                    startReviewButton.click();
+                }
+                break;
+            case 'n':
+                e.preventDefault();
+                showCreateSection();
+                break;
+            case 'j':
+                e.preventDefault();
+                window.scrollBy(0, 100);
+                break;
+            case 'k':
+                e.preventDefault();
+                window.scrollBy(0, -100);
+                break;
+            case 's':
+                e.preventDefault();
+                showSyncSection();
+                break;
+        }
+        return;
+    }
+    
+    // 如果在复习界面，处理复习操作
     if (reviewSection.classList.contains('hidden')) return;
     
     switch(e.key.toLowerCase()) {
@@ -1511,9 +1586,7 @@ function setupSwipeEvents() {
     cardContent.addEventListener('touchend', handleEnd, { passive: true });
     cardContent.addEventListener('mouseup', handleEnd);
     cardContent.addEventListener('mouseleave', handleEnd);
-    
-    // 添加键盘事件监听器
-    document.addEventListener('keydown', handleKeyDown);
+
 }
 
 // 宝石光点飞行动画
@@ -1674,9 +1747,6 @@ function nextCard() {
 
 function finishReview() {
     showCardsList();
-
-    // 移除键盘事件监听器
-    document.removeEventListener('keydown', handleKeyDown);
     
     // 移除滑动事件监听器
     cardContent.removeEventListener('touchstart', handleStart);
@@ -1734,7 +1804,7 @@ function showSessionSummary() {
         
         for (let i = 0; i < 3; i++) {
             amount = 20 + Math.floor(Math.random() * 30);
-            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1)) + i) % 6;
+            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1)) + 2 * i - 1) % 6;
             gemSlots[gemIndex] += amount;
             rewardHTML += `<span style='color:${GEM_COLORS[gemIndex]}'>${amount}</span>
             <img src="${getGemPath(gemIndex)}" alt = "gem" style='height: 16px; width: 16px; align-self: center;'>`;
@@ -1750,7 +1820,7 @@ function showSessionSummary() {
     } else if (stars === 3) {
         for (let i = 0; i < 3; i++) {
             amount = 5 + Math.floor(Math.random() * 10);
-            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1)) + i) % 6;
+            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1)) + 2 * i - 1) % 6;
             gemSlots[gemIndex] += amount;
             rewardHTML += `<span style='color:${GEM_COLORS[gemIndex]}'>${amount}</span>
             <img src="${getGemPath(gemIndex)}" alt = "gem" style='height: 16px; width: 16px; align-self: center;'>`;
@@ -1787,6 +1857,23 @@ function showSessionSummary() {
     //         overlay.classList.add('hidden');
     //     }, 350);
     // }, 5000);
+    
+    // 添加点击关闭功能
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            closeSessionSummary();
+        }
+    });
+}
+
+function closeSessionSummary() {
+    const overlay = document.getElementById('session-summary');
+    if (!overlay) return;
+    
+    overlay.classList.remove('show');
+    setTimeout(() => {
+        overlay.classList.add('hidden');
+    }, 350);
 }
 
 initApp();
