@@ -401,7 +401,6 @@ function updateServerStatusUI() {
         if (!isServerAvailable) {
             if (loginButton) loginButton.classList.add('hidden');
             if (registerButton) registerButton.classList.add('hidden');
-            if (syncButton) syncButton.classList.add('hidden');
             if (logoutButton) logoutButton.classList.add('hidden');
             userStatus.textContent = 'offline';
         }
@@ -471,9 +470,7 @@ async function login(username, password) {
         localStorage.setItem('currentUser', currentUser);
 
         updateAuthUI();
-        hideAllSections();
-        createSection.classList.remove('hidden');
-        cardsListSection.classList.remove('hidden');
+        showCardsList();
         
         return true;
     } catch (error) {
@@ -869,25 +866,19 @@ function initApp() {
     
     if (uploadCards) {
         uploadCards.addEventListener('click', async () => {
-            if (await uploadCardsToServer()) {
-                showCardsList();
-            }
+            await uploadCardsToServer();
         });
     }
     
     if (downloadCards) {
         downloadCards.addEventListener('click', async () => {
-            if (await downloadCardsFromServer()) {
-                showCardsList();
-            }
+            await downloadCardsFromServer();
         });
     }
     
     if (mergeCards) {
         mergeCards.addEventListener('click', async () => {
-            if (await mergeCardsWithServer()) {
-                showCardsList();
-            }
+            await mergeCardsWithServer();
         });
     }
     
@@ -1004,7 +995,7 @@ function showCardPreview(front, gemlist) {
     
 }
 
-saveCardButton.addEventListener('click', () => {
+function saveCard() {
     const front = cardFrontInput.value.trim();
     const back = cardBackInput.value.trim();
     if (front && back) {
@@ -1040,7 +1031,9 @@ saveCardButton.addEventListener('click', () => {
     } else {
         alert('please enter the front and back content');
     }
-});
+}
+
+saveCardButton.addEventListener('click', saveCard);
 
 function renderCardsList() {
     cardsContainer.innerHTML = '';
@@ -1168,6 +1161,7 @@ startReviewButton.addEventListener('click', () => {
         // start session metrics
         sessionStartMs = Date.now();
         sessionUnknownCount = 0;
+        sessionTotalCount = 0;
     }
 });
 
@@ -1328,8 +1322,8 @@ function toggleCardFace(speakflag) {
             hours = Math.floor(interval / (1000 * 60 * 60));
             days = Math.floor(interval / (1000 * 60 * 60 * 24));
             card.gem.forEach((gemData, gemPosition) => {
-                const gemIndex = typeof gemData === 'number' ? gemData : gemData.index;
-                const isNewGem = typeof gemData === 'object' && gemData.isNew;
+                const gemIndex = gemData.index;
+                const isNewGem = gemData.isNew;
                 
                 if (!isNewGem) {
                     const dotsContainer = document.getElementById(`gem-glow-dots-${gemIndex}-${gemPosition}`);
@@ -1385,9 +1379,25 @@ function handleKeyDown(e) {
         return;
     }
 
-    // 如果在新建卡片，esc返回
+    // 如果在新建卡片，ctrl+1: 正面输入框, ctrl+2: 背面输入框, ctrl+s: 保存, esc: 返回列表
     if (createSection && !createSection.classList.contains('hidden')) {
-        if (e.key === 'Escape') {
+        if (e.ctrlKey) {
+            switch(e.key) {
+                case '1':
+                    e.preventDefault();
+                    cardFrontInput.focus();
+                    break;
+                case '2':
+                    e.preventDefault();
+                    cardBackInput.focus();
+                    break;
+                case 's':
+                case 'S':
+                    e.preventDefault();
+                    saveCard();
+                    break;
+            }
+        } else if (e.key === 'Escape') {
             e.preventDefault();
             showCardsList();
         }
@@ -1407,7 +1417,7 @@ function handleKeyDown(e) {
                 break;
             case 'm':
                 e.preventDefault();
-                mergeCardsToLocal();
+                mergeCardsWithServer();
                 break;
             case 's':
                 e.preventDefault();
@@ -1423,29 +1433,42 @@ function handleKeyDown(e) {
 
     // 如果在列表界面，处理快捷操作
     if (cardsListSection && !cardsListSection.classList.contains('hidden')) {
-        switch(e.key.toLowerCase()) {
-            case 'r':
-                e.preventDefault();
-                if (!startReviewButton.disabled) {
-                    startReviewButton.click();
-                }
-                break;
-            case 'n':
-                e.preventDefault();
-                showCreateSection();
-                break;
-            case 'j':
-                e.preventDefault();
-                window.scrollBy(0, 100);
-                break;
-            case 'k':
-                e.preventDefault();
-                window.scrollBy(0, -100);
-                break;
-            case 's':
-                e.preventDefault();
-                showSettingsSection();
-                break;
+        if (e.shiftKey) {
+            switch(e.key.toLowerCase()) {
+                case 'j':
+                    e.preventDefault();
+                    window.scrollBy(0, 1000);
+                    break;
+                case 'k':
+                    e.preventDefault();
+                    window.scrollBy(0, -1000);
+                    break;
+            }
+        } else {
+            switch(e.key.toLowerCase()) {
+                case 'r':
+                    e.preventDefault();
+                    if (!startReviewButton.disabled) {
+                        startReviewButton.click();
+                    }
+                    break;
+                case 'n':
+                    e.preventDefault();
+                    showCreateSection();
+                    break;
+                case 'j':
+                    e.preventDefault();
+                    window.scrollBy(0, 100);
+                    break;
+                case 'k':
+                    e.preventDefault();
+                    window.scrollBy(0, -100);
+                    break;
+                case 's':
+                    e.preventDefault();
+                    showSettingsSection();
+                    break;
+            }
         }
         return;
     }
@@ -1496,6 +1519,7 @@ let calibrationOffset = { beta: 0, gamma: 0 };
 
 // Review session metrics
 let sessionStartMs = 0;
+let sessionTotalCount = 0;
 let sessionUnknownCount = 0;
 
 function handleStart(e) {
@@ -1718,6 +1742,7 @@ function updateCardStatus(known) {
     const card = reviewCards[currentCardIndex];
     // track metrics
     if (!known) sessionUnknownCount += 1;
+    sessionTotalCount += 1;
     if(isShowingAnswer){
         toggleCardFace(false);
     }
@@ -1803,12 +1828,11 @@ function showSessionSummary() {
 
     const endMs = Date.now();
     const totalMs = Math.max(0, endMs - sessionStartMs);
-    const avgMs = totalMs / (sessionUnknownCount + 20) > 0;
+    const avgMs = totalMs / sessionTotalCount;
 
-    // star logic: <=2s ★★★, <=4s ★★, else ★
     let stars = 1;
     if (avgMs <= 3000) stars = 3; else if (avgMs <= 5000) stars = 2;
-    if (sessionUnknownCount <= 15) stars += 2; else if (sessionUnknownCount <= 25) stars += 1;
+    if (sessionUnknownCount <= 5) stars += 2; else if (sessionUnknownCount <= 15) stars += 1;
     const originalIndex = Math.floor(Math.random() * 6);
     const starPath = getGemPath(originalIndex);
     const starHTML = `<img src="${starPath}" alt="gem">`.repeat(stars);
@@ -1816,7 +1840,7 @@ function showSessionSummary() {
     if (starsEl) starsEl.innerHTML = starHTML;
     if (totalTimeEl) totalTimeEl.textContent = msToHuman(totalMs);
     if (unknownEl) unknownEl.textContent = String(sessionUnknownCount);
-    if (avgEl) avgEl.textContent = msToHuman(avgMs);
+    if (avgEl) avgEl.textContent = `${(avgMs/1000).toFixed(2)}s`;
 
     // rewards based on stars: grant extra gem slot points
     // 3★: +6 each slot, 2★: +3, 1★: +1 distributed to random slot
@@ -1969,11 +1993,7 @@ function setupTiltControls() {
             }
         }
     };
-    
-    // 初始化时加载设置
     loadSettings();
-    
-    // 当设置改变时保存
     if (thresholdSlider) {
         thresholdSlider.addEventListener('change', saveSettings);
     }
@@ -1989,8 +2009,6 @@ function startCalibration() {
     calibrateBtn.textContent = 'Calibrating...';
     calibrateBtn.classList.add('calibrating');
     tiltStatus.textContent = 'Hold device in neutral position...';
-    
-    // 3秒后完成校准
     setTimeout(() => {
         completeCalibration();
     }, 3000);
@@ -2006,11 +2024,8 @@ function completeCalibration() {
     calibrateBtn.textContent = 'Calibrate Tilt';
     calibrateBtn.classList.remove('calibrating');
     tiltStatus.textContent = 'Calibrated!';
-    
-    // 保存校准数据
     localStorage.setItem('calibrationOffset', JSON.stringify(calibrationOffset));
-    
-    // 2秒后恢复默认状态
+
     setTimeout(() => {
         if (tiltStatus) {
             tiltStatus.textContent = 'Ready';
@@ -2031,27 +2046,22 @@ function updateCalibrationStatus(beta, gamma) {
 }
 
 function handleDeviceOrientation(event) {
-    // 只在复习界面处理倾斜
     if (reviewSection.classList.contains('hidden')) return;
     
     const now = Date.now();
     if (now - lastTiltTime < tiltCooldown) return;
     
-    let beta = event.beta;  // 前后倾斜 (-180 to 180)
-    let gamma = event.gamma; // 左右倾斜 (-90 to 90)
+    let beta = event.beta;
+    let gamma = event.gamma;
     
     // 应用校准偏移
     beta -= calibrationOffset.beta;
     gamma -= calibrationOffset.gamma;
-    
-    // 如果正在校准，更新状态显示
+
     if (isCalibrating) {
         updateCalibrationStatus(beta, gamma);
         return;
     }
-    
-    // 防止设备平放时的误触
-    if (Math.abs(beta) < 10) return;
     
     // 左右倾斜：向左倾斜表示忘记，向右倾斜表示记得
     if (Math.abs(gamma) > tiltThreshold) {

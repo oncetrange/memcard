@@ -338,7 +338,6 @@ textarea {
     border-radius: 2px;
     background: #ddd;
     outline: none;
-    -webkit-appearance: none;
 }
 
 #tilt-threshold-slider::-webkit-slider-thumb {
