@@ -9,6 +9,7 @@ const cardsListSection = document.getElementById('cards-list');
 const reviewCard = document.getElementById('review-card');
 const cardContent = document.getElementById('card-content');
 const cardPreview = document.getElementById('card-preview');
+const speechEnabledSetting = document.getElementById('speech-enabled-setting');
 
 const API_BASE_URL = 'https://117.72.179.137:3000/api'
 
@@ -16,10 +17,10 @@ const AUDIO_CACHE_PREFIX = 'youdao_audio_';
 const AUDIO_CACHE_DURATION = 30 * 24 * 60 * 60 * 1000;
 const AUDIO_CACHE_MAX_ENTRIES = 200;
 
-let userStatus, loginButton, registerButton, logoutButton, syncButton;
-let loginSection, registerSection, syncSection;
+let userStatus, loginButton, registerButton, logoutButton, settingsButton;
+let loginSection, registerSection, settingsSection;
 let loginSubmit, loginCancel, registerSubmit, registerCancel;
-let uploadCards, downloadCards, mergeCards, syncCancel;
+let uploadCards, downloadCards, mergeCards, settingsBack;
 
 async function getYoudaoAudioUrl(word) {
     const encodedWord = encodeURIComponent(word);
@@ -237,10 +238,10 @@ function initAuthElements() {
     loginButton = document.getElementById('login-button');
     registerButton = document.getElementById('register-button');
     logoutButton = document.getElementById('logout-button');
-    syncButton = document.getElementById('sync-button');
+    settingsButton = document.getElementById('settings-button');
     loginSection = document.getElementById('login-section');
     registerSection = document.getElementById('register-section');
-    syncSection = document.getElementById('sync-section');
+    settingsSection = document.getElementById('settings-section');
     loginSubmit = document.getElementById('login-submit');
     loginCancel = document.getElementById('login-cancel');
     registerSubmit = document.getElementById('register-submit');
@@ -248,7 +249,7 @@ function initAuthElements() {
     uploadCards = document.getElementById('upload-cards');
     downloadCards = document.getElementById('download-cards');
     mergeCards = document.getElementById('merge-cards');
-    syncCancel = document.getElementById('sync-cancel');
+    settingsBack = document.getElementById('settings-back');
 }
 
 
@@ -281,8 +282,7 @@ function updateCardsStats() {
 }
 
 async function speakText(text, options = {}) {
-    const speechEnabled = document.getElementById('speech-enabled');
-    if (speechEnabled && !speechEnabled.checked) {
+    if (speechEnabledSetting && !speechEnabledSetting.checked) {
         return;
     }
 
@@ -718,7 +718,7 @@ async function mergeCardsWithServer() {
 }
 
 function updateAuthUI() {
-    if (!userStatus || !loginButton || !registerButton || !logoutButton || !syncButton) {
+    if (!userStatus || !loginButton || !registerButton || !logoutButton || !settingsButton) {
         return;
     }
     
@@ -727,13 +727,13 @@ function updateAuthUI() {
         loginButton.classList.add('hidden');
         registerButton.classList.add('hidden');
         logoutButton.classList.remove('hidden');
-        syncButton.classList.remove('hidden');
+        settingsButton.classList.remove('hidden');
     } else {
         userStatus.textContent = 'offline';
         loginButton.classList.remove('hidden');
         registerButton.classList.remove('hidden');
         logoutButton.classList.add('hidden');
-        syncButton.classList.add('hidden');
+        settingsButton.classList.add('hidden');
     }
 }
 
@@ -747,9 +747,9 @@ function showRegisterSection() {
     if (registerSection) registerSection.classList.remove('hidden');
 }
 
-function showSyncSection() {
+function showSettingsSection() {
     hideAllSections();
-    if (syncSection) syncSection.classList.remove('hidden');
+    if (settingsSection) settingsSection.classList.remove('hidden');
 }
 
 function hideAllSections() {
@@ -758,7 +758,7 @@ function hideAllSections() {
     if (reviewSection) reviewSection.classList.add('hidden');
     if (loginSection) loginSection.classList.add('hidden');
     if (registerSection) registerSection.classList.add('hidden');
-    if (syncSection) syncSection.classList.add('hidden');
+    if (settingsSection) settingsSection.classList.add('hidden');
     if (document.getElementById('edit-section')) document.getElementById('edit-section').classList.add('hidden');
     if (cardPreview) cardPreview.classList.add('hidden');
 }
@@ -802,8 +802,8 @@ function initApp() {
         logoutButton.addEventListener('click', logout);
     }
     
-    if (syncButton) {
-        syncButton.addEventListener('click', showSyncSection);
+    if (settingsButton) {
+        settingsButton.addEventListener('click', showSettingsSection);
     }
     
     if (loginSubmit) {
@@ -891,8 +891,8 @@ function initApp() {
         });
     }
     
-    if (syncCancel) {
-        syncCancel.addEventListener('click', () => {
+    if (settingsBack) {
+        settingsBack.addEventListener('click', () => {
             showCardsList();
         });
     }
@@ -1395,7 +1395,7 @@ function handleKeyDown(e) {
     }
 
     // 如果在同步界面，u: upload, d: download, m: merge, esc: close
-    if (syncSection && !syncSection.classList.contains('hidden')) {
+    if (settingsSection && !settingsSection.classList.contains('hidden')) {
         switch(e.key.toLowerCase()) {
             case 'u':
                 e.preventDefault();
@@ -1408,6 +1408,10 @@ function handleKeyDown(e) {
             case 'm':
                 e.preventDefault();
                 mergeCardsToLocal();
+                break;
+            case 's':
+                e.preventDefault();
+                speechEnabledSetting.checked = !speechEnabledSetting.checked;
                 break;
         }
         if (e.key === 'Escape') {
@@ -1440,7 +1444,7 @@ function handleKeyDown(e) {
                 break;
             case 's':
                 e.preventDefault();
-                showSyncSection();
+                showSettingsSection();
                 break;
         }
         return;
@@ -1484,9 +1488,11 @@ let isDragging = false;
 
 // Device orientation for mobile tilt controls
 let deviceOrientation = null;
-let tiltThreshold = 15; // degrees
+let tiltThreshold = 60; // degrees
 let lastTiltTime = 0;
 let tiltCooldown = 1000; // ms
+let isCalibrating = false;
+let calibrationOffset = { beta: 0, gamma: 0 };
 
 // Review session metrics
 let sessionStartMs = 0;
@@ -1595,6 +1601,10 @@ function setupSwipeEvents() {
 
     // 设置设备方向监听
     setupDeviceOrientation();
+    
+    // 设置倾斜控制UI事件
+    setupTiltControls();
+
 }
 
 // 宝石光点飞行动画
@@ -1815,7 +1825,7 @@ function showSessionSummary() {
         
         for (let i = 0; i < 3; i++) {
             amount = 20 + Math.floor(Math.random() * 30);
-            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1)) + 2 * i - 1) % 6;
+            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1) + 0.5 * i * i + 0.5 * i)) % 6;
             gemSlots[gemIndex] += amount;
             rewardHTML += `<span style='color:${GEM_COLORS[gemIndex]}'>${amount}</span>
             <img src="${getGemPath(gemIndex)}" alt = "gem" style='height: 16px; width: 16px; align-self: center;'>`;
@@ -1831,7 +1841,7 @@ function showSessionSummary() {
     } else if (stars === 3) {
         for (let i = 0; i < 3; i++) {
             amount = 5 + Math.floor(Math.random() * 10);
-            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1)) + 2 * i - 1) % 6;
+            gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1) + 0.5 * i * i + 0.5 * i)) % 6;
             gemSlots[gemIndex] += amount;
             rewardHTML += `<span style='color:${GEM_COLORS[gemIndex]}'>${amount}</span>
             <img src="${getGemPath(gemIndex)}" alt = "gem" style='height: 16px; width: 16px; align-self: center;'>`;
@@ -1915,6 +1925,111 @@ function removeDeviceOrientation() {
     window.removeEventListener('deviceorientation', handleDeviceOrientation);
 }
 
+function setupTiltControls() {
+    const calibrateBtn = document.getElementById('calibrate-tilt');
+    const thresholdSlider = document.getElementById('tilt-threshold-slider');
+    const thresholdValue = document.getElementById('threshold-value');
+    
+    if (calibrateBtn) {
+        calibrateBtn.addEventListener('click', startCalibration);
+    }
+    
+    if (thresholdSlider) {
+        thresholdSlider.value = tiltThreshold;
+        thresholdSlider.addEventListener('input', (e) => {
+            tiltThreshold = parseInt(e.target.value);
+            if (thresholdValue) {
+                thresholdValue.textContent = `${tiltThreshold}°`;
+            }
+        });
+    }
+    
+    // 保存设置到localStorage
+    const saveSettings = () => {
+        localStorage.setItem('tiltThreshold', tiltThreshold.toString());
+        localStorage.setItem('calibrationOffset', JSON.stringify(calibrationOffset));
+    };
+    
+    // 加载设置
+    const loadSettings = () => {
+        const savedThreshold = localStorage.getItem('tiltThreshold');
+        const savedCalibration = localStorage.getItem('calibrationOffset');
+        
+        if (savedThreshold) {
+            tiltThreshold = parseInt(savedThreshold);
+            if (thresholdSlider) thresholdSlider.value = tiltThreshold;
+            if (thresholdValue) thresholdValue.textContent = `${tiltThreshold}°`;
+        }
+        
+        if (savedCalibration) {
+            try {
+                calibrationOffset = JSON.parse(savedCalibration);
+            } catch (e) {
+                console.log('Failed to load calibration offset');
+            }
+        }
+    };
+    
+    // 初始化时加载设置
+    loadSettings();
+    
+    // 当设置改变时保存
+    if (thresholdSlider) {
+        thresholdSlider.addEventListener('change', saveSettings);
+    }
+}
+
+function startCalibration() {
+    const calibrateBtn = document.getElementById('calibrate-tilt');
+    const tiltStatus = document.getElementById('tilt-status');
+    
+    if (!calibrateBtn || !tiltStatus) return;
+    
+    isCalibrating = true;
+    calibrateBtn.textContent = 'Calibrating...';
+    calibrateBtn.classList.add('calibrating');
+    tiltStatus.textContent = 'Hold device in neutral position...';
+    
+    // 3秒后完成校准
+    setTimeout(() => {
+        completeCalibration();
+    }, 3000);
+}
+
+function completeCalibration() {
+    const calibrateBtn = document.getElementById('calibrate-tilt');
+    const tiltStatus = document.getElementById('tilt-status');
+    
+    if (!calibrateBtn || !tiltStatus) return;
+    
+    isCalibrating = false;
+    calibrateBtn.textContent = 'Calibrate Tilt';
+    calibrateBtn.classList.remove('calibrating');
+    tiltStatus.textContent = 'Calibrated!';
+    
+    // 保存校准数据
+    localStorage.setItem('calibrationOffset', JSON.stringify(calibrationOffset));
+    
+    // 2秒后恢复默认状态
+    setTimeout(() => {
+        if (tiltStatus) {
+            tiltStatus.textContent = 'Ready';
+        }
+    }, 2000);
+}
+
+function updateCalibrationStatus(beta, gamma) {
+    const tiltStatus = document.getElementById('tilt-status');
+    if (!tiltStatus) return;
+    
+    // 在校准过程中，记录当前角度作为偏移量
+    if (isCalibrating) {
+        calibrationOffset.beta = beta;
+        calibrationOffset.gamma = gamma;
+        tiltStatus.textContent = `β: ${Math.round(beta)}° γ: ${Math.round(gamma)}°`;
+    }
+}
+
 function handleDeviceOrientation(event) {
     // 只在复习界面处理倾斜
     if (reviewSection.classList.contains('hidden')) return;
@@ -1922,8 +2037,18 @@ function handleDeviceOrientation(event) {
     const now = Date.now();
     if (now - lastTiltTime < tiltCooldown) return;
     
-    const beta = event.beta;  // 前后倾斜 (-180 to 180)
-    const gamma = event.gamma; // 左右倾斜 (-90 to 90)
+    let beta = event.beta;  // 前后倾斜 (-180 to 180)
+    let gamma = event.gamma; // 左右倾斜 (-90 to 90)
+    
+    // 应用校准偏移
+    beta -= calibrationOffset.beta;
+    gamma -= calibrationOffset.gamma;
+    
+    // 如果正在校准，更新状态显示
+    if (isCalibrating) {
+        updateCalibrationStatus(beta, gamma);
+        return;
+    }
     
     // 防止设备平放时的误触
     if (Math.abs(beta) < 10) return;
@@ -1947,7 +2072,7 @@ function handleDeviceOrientation(event) {
     }
     
     // 前后倾斜：向后倾斜表示翻转
-    if (beta > tiltThreshold) {
+    if (beta > tiltThreshold / 2) {
         lastTiltTime = now;
         // 向后倾斜 - 翻转卡片
         cardContent.classList.add('swiped-up');

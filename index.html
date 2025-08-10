@@ -15,7 +15,7 @@
                 <button id="login-button" class="btn btn-small">login</button>
                 <button id="register-button" class="btn btn-small">register</button>
                 <button id="logout-button" class="btn btn-small hidden">logout</button>
-                <button id="sync-button" class="btn btn-small hidden">sync</button>
+                <button id="settings-button" class="btn btn-small hidden">settings</button>
             </div>
         </div>
         
@@ -55,13 +55,46 @@
             </div>
         </div>
         
-        <div id="sync-section" class="section hidden">
-            <h2>synchronization</h2>
-            <div class="sync-options">
-                <button id="upload-cards" class="btn">upload</button>
-                <button id="download-cards" class="btn">download</button>
-                <button id="merge-cards" class="btn">merge</button>
-                <button id="sync-cancel" class="btn btn-secondary">cancel</button>
+        <div id="settings-section" class="section hidden">
+            <div class="settings-header">
+                <h2>Settings</h2>
+                <button id="settings-back" class="btn btn-secondary">Back</button>
+            </div>
+            <div class="settings-content">
+                <div class="setting-group">
+                    <h4>Tilt Controls</h4>
+                    <div class="tilt-controls">
+                        <div class="tilt-calibration">
+                            <button id="calibrate-tilt" class="btn btn-small">Calibrate Tilt</button>
+                            <span id="tilt-status">Ready</span>
+                        </div>
+                        <div class="tilt-threshold">
+                            <label for="tilt-threshold-slider">Tilt Sensitivity: <span id="threshold-value">60°</span></label>
+                            <input type="range" id="tilt-threshold-slider" min="15" max="90" value="60" step="5">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <h4>Audio</h4>
+                    <div class="audio-setting">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="speech-enabled-setting" checked>
+                            <span class="checkmark"></span>
+                            Enable Text-to-Speech
+                        </label>
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <h4>Sync</h4>
+                    <div class="sync-controls">
+                        <button id="upload-cards" class="btn">Upload</button>
+                        <button id="download-cards" class="btn">Download</button>
+                        <button id="merge-cards" class="btn">Merge</button>
+                    </div>
+                    <div id="sync-status"></div>
+                </div>
             </div>
         </div>
         <div id="create-section" class="section hidden">
@@ -91,10 +124,6 @@
             </div>
             <div class="review-controls">
                 <button id="start-review" class="btn">Review</button>
-                <label class="speech-toggle">
-                    <input type="checkbox" id="speech-enabled" checked>
-                    <span>Auto Speech</span>
-                </label>
             </div>
             <div id="cards-container"></div>
         </div>
