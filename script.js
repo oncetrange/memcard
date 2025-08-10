@@ -1482,6 +1482,12 @@ let currentX = 0;
 let currentY = 0;
 let isDragging = false;
 
+// Device orientation for mobile tilt controls
+let deviceOrientation = null;
+let tiltThreshold = 15; // degrees
+let lastTiltTime = 0;
+let tiltCooldown = 1000; // ms
+
 // Review session metrics
 let sessionStartMs = 0;
 let sessionUnknownCount = 0;
@@ -1587,6 +1593,8 @@ function setupSwipeEvents() {
     cardContent.addEventListener('mouseup', handleEnd);
     cardContent.addEventListener('mouseleave', handleEnd);
 
+    // 设置设备方向监听
+    setupDeviceOrientation();
 }
 
 // 宝石光点飞行动画
@@ -1757,6 +1765,9 @@ function finishReview() {
     cardContent.removeEventListener('mouseup', handleEnd);
     cardContent.removeEventListener('mouseleave', handleEnd);
 
+    // 移除设备方向监听
+    removeDeviceOrientation();
+
     renderCardsList();
 
     // show session summary overlay instead of alert
@@ -1874,6 +1885,80 @@ function closeSessionSummary() {
     setTimeout(() => {
         overlay.classList.add('hidden');
     }, 350);
+}
+
+function setupDeviceOrientation() {
+    // 检查设备是否支持方向传感器
+    if (!window.DeviceOrientationEvent) {
+        console.log('Device orientation not supported');
+        return;
+    }
+    
+    // 请求权限（iOS需要）
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+            .then(permission => {
+                if (permission === 'granted') {
+                    window.addEventListener('deviceorientation', handleDeviceOrientation);
+                }
+            })
+            .catch(err => {
+                console.log('Device orientation permission denied:', err);
+            });
+    } else {
+        // Android和其他设备直接添加监听
+        window.addEventListener('deviceorientation', handleDeviceOrientation);
+    }
+}
+
+function removeDeviceOrientation() {
+    window.removeEventListener('deviceorientation', handleDeviceOrientation);
+}
+
+function handleDeviceOrientation(event) {
+    // 只在复习界面处理倾斜
+    if (reviewSection.classList.contains('hidden')) return;
+    
+    const now = Date.now();
+    if (now - lastTiltTime < tiltCooldown) return;
+    
+    const beta = event.beta;  // 前后倾斜 (-180 to 180)
+    const gamma = event.gamma; // 左右倾斜 (-90 to 90)
+    
+    // 防止设备平放时的误触
+    if (Math.abs(beta) < 10) return;
+    
+    // 左右倾斜：向左倾斜表示忘记，向右倾斜表示记得
+    if (Math.abs(gamma) > tiltThreshold) {
+        lastTiltTime = now;
+        
+        if (gamma < -tiltThreshold) {
+            // 向左倾斜 - 忘记
+            cardContent.classList.add('swiped-left');
+            updateCardStatus(false);
+            setTimeout(nextCard, 300);
+        } else if (gamma > tiltThreshold) {
+            // 向右倾斜 - 记得
+            cardContent.classList.add('swiped-right');
+            updateCardStatus(true);
+            setTimeout(nextCard, 300);
+        }
+        return;
+    }
+    
+    // 前后倾斜：向后倾斜表示翻转
+    if (beta > tiltThreshold) {
+        lastTiltTime = now;
+        // 向后倾斜 - 翻转卡片
+        cardContent.classList.add('swiped-up');
+        setTimeout(() => {
+            toggleCardFace(true);
+            cardContent.classList.remove('swiped-up');
+            cardContent.style.transform = '';
+            cardContent.style.backgroundColor = '';
+            cardContent.style.color = '';
+        }, 300);
+    }
 }
 
 initApp();
