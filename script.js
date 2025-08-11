@@ -178,7 +178,12 @@ async function fetchYoudaoAudio(word) {
         }
         
         const arrayBuffer = await response.arrayBuffer();
-        const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const uint8Array = new Uint8Array(arrayBuffer);
+        let binaryString = '';
+        for (let i = 0; i < uint8Array.length; i++) {
+            binaryString += String.fromCharCode(uint8Array[i]);
+        }
+        const base64Audio = btoa(binaryString);
         return `data:audio/mp3;base64,${base64Audio}`;
     } catch (error) {
         console.error('Failed to fetch Youdao audio:', error);
@@ -911,6 +916,9 @@ function initApp() {
 
     // 添加键盘事件监听器
     document.addEventListener('keydown', handleKeyDown);
+        
+    // 设置倾斜控制UI事件
+    setupTiltControls();
 }
 
 let gemSlots = [0, 0, 0, 0, 0, 0];
@@ -976,16 +984,31 @@ function showCardPreview(front, gemlist) {
         aniDuration = 3000;
     }
     cardPreview.innerHTML = `
-        <div class="gem-container">
-            ${gemHTML}
+        <div class="card-preview-container">
+            <div class="gem-container">
+                ${gemHTML}
+            </div>
+            <div class="card-preview-front">${front}</div>
         </div>
-        <div class="card-preview-front">${front}</div>
     `;
     if (effectClass!='') cardPreview.classList.add(effectClass);
-    cardPreview.classList.add('show');
     cardPreview.classList.remove('hidden');
+    cardPreview.addEventListener('click', () => {
+        const container = cardPreview.querySelector('.card-preview-container');
+        if (container) {
+            container.classList.add('fade-out');
+        }
+        setTimeout(() => {
+            cardPreview.classList.add('hidden');
+            cardPreview.innerHTML = '';
+            cardPreview.removeEventListener('click', () => {});
+        }, 800);
+    });
     setTimeout(() => {
-        cardPreview.classList.remove('show');
+        const container = cardPreview.querySelector('.card-preview-container');
+        if (container) {
+            container.classList.add('fade-out');
+        }
         setTimeout(() => {
             if (effectClass!='') cardPreview.classList.remove(effectClass);
             cardPreview.classList.add('hidden');
@@ -1147,7 +1170,7 @@ function updateReviewButtonState() {
 
 startReviewButton.addEventListener('click', () => {
     if (cards.length === 0) return;
-  
+    unknownCountThreshold = 0;
     if(selectCardsForReview()){
         createSection.classList.add('hidden');
         cardsListSection.classList.add('hidden');
@@ -1173,6 +1196,12 @@ function selectCardsForReview() {
     });
     
     reviewCards = eligibleCards.slice(0, 20);
+
+    for (const card of reviewCards) {
+        if (!card.lastReviewed) {
+            unknownCountThreshold++;
+        }
+    }
 
     if (reviewCards.length < 10) {
         alert('Not enough cards to review, please create more');
@@ -1369,6 +1398,20 @@ function toggleCardFace(speakflag) {
 
 // 键盘事件处理函数
 function handleKeyDown(e) {
+    if (!e.key) return;
+    // 如果预览窗显示，只处理关闭操作
+    const cardPreview = document.getElementById('card-preview');
+    if (cardPreview && !cardPreview.classList.contains('hidden')) {
+        if (e.key.toLowerCase() === 'w' || e.key === 'Escape') {
+            e.preventDefault();
+            setTimeout(() => {
+                cardPreview.classList.add('hidden');
+                cardPreview.innerHTML = '';
+                cardPreview.removeEventListener('click', () => {});
+            }, 800);
+        }
+        return;
+    }
     // 如果总结窗显示，只处理关闭操作
     const sessionSummary = document.getElementById('session-summary');
     if (sessionSummary && !sessionSummary.classList.contains('hidden')) {
@@ -1521,6 +1564,8 @@ let calibrationOffset = { beta: 0, gamma: 0 };
 let sessionStartMs = 0;
 let sessionTotalCount = 0;
 let sessionUnknownCount = 0;
+// for new card, add unknown count threshold
+let unknownCountThreshold = 0;
 
 function handleStart(e) {
     startX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
@@ -1831,8 +1876,8 @@ function showSessionSummary() {
     const avgMs = totalMs / sessionTotalCount;
 
     let stars = 1;
-    if (avgMs <= 3000) stars = 3; else if (avgMs <= 5000) stars = 2;
-    if (sessionUnknownCount <= 5) stars += 2; else if (sessionUnknownCount <= 15) stars += 1;
+    if (avgMs <= 3500) stars = 3; else if (avgMs <= 5000) stars = 2;
+    if (sessionUnknownCount <= 5 + unknownCountThreshold) stars += 2; else if (sessionUnknownCount <= 10 + unknownCountThreshold * 2) stars += 1;
     const originalIndex = Math.floor(Math.random() * 6);
     const starPath = getGemPath(originalIndex);
     const starHTML = `<img src="${starPath}" alt="gem">`.repeat(stars);
@@ -1842,11 +1887,8 @@ function showSessionSummary() {
     if (unknownEl) unknownEl.textContent = String(sessionUnknownCount);
     if (avgEl) avgEl.textContent = `${(avgMs/1000).toFixed(2)}s`;
 
-    // rewards based on stars: grant extra gem slot points
-    // 3★: +6 each slot, 2★: +3, 1★: +1 distributed to random slot
     let rewardHTML = `<span style='margin-right: auto'>Rewards: </span>`;
     if (stars === 5) {
-        
         for (let i = 0; i < 3; i++) {
             amount = 20 + Math.floor(Math.random() * 30);
             gemIndex = (originalIndex + Math.floor(Math.random()*(i + 1) + 0.5 * i * i + 0.5 * i)) % 6;
@@ -1896,14 +1938,6 @@ function showSessionSummary() {
         overlay.classList.add('show');
     });
 
-    // setTimeout(() => {
-    //     overlay.classList.remove('show');
-    //     setTimeout(() => {
-    //         overlay.classList.add('hidden');
-    //     }, 350);
-    // }, 5000);
-    
-    // 添加点击关闭功能
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
             closeSessionSummary();
