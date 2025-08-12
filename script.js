@@ -945,7 +945,7 @@ async function initApp() {
 
     // 添加键盘事件监听器
     document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('keyup', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
         
     // 设置倾斜控制UI事件
     setupTiltControls();
@@ -1097,7 +1097,12 @@ function createCard() {
 
 saveCardButton.addEventListener('click', createCard);
 
+gemResting = [0,0,0,0,0,0];
+gemTotal = [0,0,0,0,0,0];
+
 function renderCardsList() {
+    gemResting = [0,0,0,0,0,0];
+    gemTotal = [0,0,0,0,0,0];
     cardsContainer.innerHTML = '';
     if (cards.length === 0) {
         cardsContainer.innerHTML = '<p>empty, please create new cards</p>';
@@ -1132,6 +1137,10 @@ function renderCardsList() {
                     const gemIndex = gemData.index;
                     const isNewGem = gemData.isNew;
                     const gemClass = isNewGem ? 'new-gem' : '';
+                    if (time < 0) {
+                        gemResting[gemIndex]++;
+                    }
+                    gemTotal[gemIndex]++;
                     return `<img src="${getGemPath(gemIndex)}" alt="gem" title="${getGemName(gemIndex)}" class="${gemClass}">`;
                 }).join('')}
             </div>` : '<div class="card-item-gems"></div>';
@@ -1336,6 +1345,9 @@ startReviewButton.addEventListener('click', () => {
         sessionStartMs = Date.now();
         sessionUnknownCount = 0;
         sessionTotalCount = 0;
+        
+        // 初始化单词列表
+        initWordList();
     }
 });
 
@@ -1352,7 +1364,7 @@ function selectCardsForReview() {
         if (!card.lastReviewed) {
             unknownCountThreshold += 2;
         }
-        if (card.nextReviewDate - card.lastReviewed < 1000 * 60 * 60 * 2) {
+        if (card.lastReviewed && card.nextReviewDate - card.lastReviewed < 1000 * 60 * 60 * 2) {
             unknownCountThreshold += 1;
         }
         if (card.gem && Array.isArray(card.gem)) {
@@ -1577,181 +1589,189 @@ function toggleCardFace(speakflag) {
 function handleKeyDown(e) {
     if (!e.key) return;
     // 如果预览窗显示，只处理关闭操作
-    if (e.type === 'keydown') {
-        const cardPreview = document.getElementById('card-preview');
-        if (cardPreview && !cardPreview.classList.contains('hidden')) {
-            if (e.key.toLowerCase() === 'w' || e.key === 'Escape') {
-                e.preventDefault();
-                setTimeout(() => {
-                    cardPreview.classList.add('hidden');
-                    cardPreview.innerHTML = '';
-                    cardPreview.removeEventListener('click', () => {});
-                }, 800);
-            }
-            return;
+    const cardPreview = document.getElementById('card-preview');
+    if (cardPreview && !cardPreview.classList.contains('hidden')) {
+        if (e.key.toLowerCase() === 'w' || e.key === 'Escape') {
+            e.preventDefault();
+            setTimeout(() => {
+                cardPreview.classList.add('hidden');
+                cardPreview.innerHTML = '';
+                cardPreview.removeEventListener('click', () => {});
+            }, 800);
         }
-        // 如果总结窗显示，只处理关闭操作
-        const sessionSummary = document.getElementById('session-summary');
-        if (sessionSummary && !sessionSummary.classList.contains('hidden')) {
-            if (e.key.toLowerCase() === 'w' || e.key === 'Escape') {
-                e.preventDefault();
-                closeSessionSummary();
-            }
-            return;
+        return;
+    }
+    // 如果总结窗显示，只处理关闭操作
+    const sessionSummary = document.getElementById('session-summary');
+    if (sessionSummary && !sessionSummary.classList.contains('hidden')) {
+        if (e.key.toLowerCase() === 'w' || e.key === 'Escape') {
+            e.preventDefault();
+            closeSessionSummary();
         }
+        return;
+    }
 
-        // 如果在新建卡片，ctrl+1: 正面输入框, ctrl+2: 背面输入框, ctrl+s: 保存, esc: 返回列表
-        if (createSection && !createSection.classList.contains('hidden')) {
-            if (e.ctrlKey) {
-                switch(e.key) {
-                    case '1':
-                        e.preventDefault();
-                        cardFrontInput.focus();
-                        break;
-                    case '2':
-                        e.preventDefault();
-                        cardBackInput.focus();
-                        break;
-                    case 's':
-                    case 'S':
-                        e.preventDefault();
-                        createCard();
-                        break;
-                }
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                showCardsList();
+    // 如果在新建卡片，ctrl+1: 正面输入框, ctrl+2: 背面输入框, ctrl+s: 保存, esc: 返回列表
+    if (createSection && !createSection.classList.contains('hidden')) {
+        if (e.ctrlKey) {
+            switch(e.key) {
+                case '1':
+                    e.preventDefault();
+                    cardFrontInput.focus();
+                    break;
+                case '2':
+                    e.preventDefault();
+                    cardBackInput.focus();
+                    break;
+                case 's':
+                case 'S':
+                    e.preventDefault();
+                    createCard();
+                    break;
             }
-            return;
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            showCardsList();
         }
+        return;
+    }
 
-        // 如果在同步界面，u: upload, d: download, m: merge, esc: close
-        if (settingsSection && !settingsSection.classList.contains('hidden')) {
+    // 如果在同步界面，u: upload, d: download, m: merge, esc: close
+    if (settingsSection && !settingsSection.classList.contains('hidden')) {
+        switch(e.key.toLowerCase()) {
+            case 'u':
+                e.preventDefault();
+                uploadCardsToServer();
+                break;
+            case 'd':
+                e.preventDefault();
+                downloadCardsFromServer();
+                break;
+            case 'm':
+                e.preventDefault();
+                mergeCardsWithServer();
+                break;
+            case 's':
+                e.preventDefault();
+                speechEnabledSetting.checked = !speechEnabledSetting.checked;
+                break;
+            case 'e':
+                e.preventDefault();
+                exportCardsToFile();
+                break;
+            case 'i':
+                e.preventDefault();
+                importCards.click();
+                break;
+        }
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            showCardsList();
+        }
+        return;
+    }
+
+    // 如果在列表界面，处理快捷操作
+    if (cardsListSection && !cardsListSection.classList.contains('hidden')) {
+        if (e.shiftKey) {
             switch(e.key.toLowerCase()) {
-                case 'u':
+                case 'j':
                     e.preventDefault();
-                    uploadCardsToServer();
+                    window.scrollBy(0, 1000);
                     break;
-                case 'd':
+                case 'k':
                     e.preventDefault();
-                    downloadCardsFromServer();
+                    window.scrollBy(0, -1000);
                     break;
-                case 'm':
+            }
+        } else {
+            switch(e.key.toLowerCase()) {
+                case 'r':
                     e.preventDefault();
-                    mergeCardsWithServer();
+                    if (!startReviewButton.disabled) {
+                        startReviewButton.click();
+                    }
+                    break;
+                case 'n':
+                    e.preventDefault();
+                    showCreateSection();
+                    break;
+                case 'j':
+                    e.preventDefault();
+                    window.scrollBy(0, 100);
+                    break;
+                case 'k':
+                    e.preventDefault();
+                    window.scrollBy(0, -100);
                     break;
                 case 's':
                     e.preventDefault();
-                    speechEnabledSetting.checked = !speechEnabledSetting.checked;
-                    break;
-                case 'e':
-                    e.preventDefault();
-                    exportCardsToFile();
-                    break;
-                case 'i':
-                    e.preventDefault();
-                    importCards.click();
+                    showSettingsSection();
                     break;
             }
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                showCardsList();
-            }
-            return;
         }
-
-        // 如果在列表界面，处理快捷操作
-        if (cardsListSection && !cardsListSection.classList.contains('hidden')) {
-            if (e.shiftKey) {
-                switch(e.key.toLowerCase()) {
-                    case 'j':
-                        e.preventDefault();
-                        window.scrollBy(0, 1000);
-                        break;
-                    case 'k':
-                        e.preventDefault();
-                        window.scrollBy(0, -1000);
-                        break;
-                }
-            } else {
-                switch(e.key.toLowerCase()) {
-                    case 'r':
-                        e.preventDefault();
-                        if (!startReviewButton.disabled) {
-                            startReviewButton.click();
-                        }
-                        break;
-                    case 'n':
-                        e.preventDefault();
-                        showCreateSection();
-                        break;
-                    case 'j':
-                        e.preventDefault();
-                        window.scrollBy(0, 100);
-                        break;
-                    case 'k':
-                        e.preventDefault();
-                        window.scrollBy(0, -100);
-                        break;
-                    case 's':
-                        e.preventDefault();
-                        showSettingsSection();
-                        break;
-                }
-            }
-            return;
-        }
+        return;
     }
+    
     // 如果在复习界面，处理复习操作
     if (reviewSection.classList.contains('hidden')) return;
     
     const key = e.key.toLowerCase();
-    if (['h', 'k', 'l'].includes(key)) {
+    if (key === 'tab') {
         e.preventDefault();
         if (e.type === 'keydown') {
-            if (!keyDownState[key]) {
-                keyDownState[key] = true;
-                keyActionExecuted[key] = false;
-                switch(key) {
-                    case 'h':
-                        cardContent.classList.add('swiped-left');
-                        break;
-                    case 'k':
-                        cardContent.classList.add('swiped-up');
-                        break;
-                    case 'l':
-                        cardContent.classList.add('swiped-right');
-                        break;
-                }
-            }
+            toggleWordList();
         }
-        else if (e.type === 'keyup') {
-            if (keyDownState[key] && !keyActionExecuted[key]) {
-                keyActionExecuted[key] = true;
-                keyDownState[key] = false;
-                
-                switch(key) {
-                    case 'h':
-                        updateCardStatus(false);
-                        setTimeout(nextCard, 200);
-                        break;
-                    case 'k':
-                        setTimeout(() => {
-                            toggleCardFace(true);
-                            cardContent.classList.remove('swiped-up');
-                            cardContent.style.transform = '';
-                            cardContent.style.backgroundColor = '';
-                            cardContent.style.color = '';
-                        }, 200);
-                        break;
-                    case 'l':
-                        updateCardStatus(true);
-                        setTimeout(nextCard, 200);
-                        break;
-                }
+        return;
+    }
+    if (['h', 'k', 'l'].includes(key)) {
+        e.preventDefault();
+        if (!keyDownState[key]) {
+            keyDownState[key] = true;
+            keyActionExecuted[key] = false;
+            switch(key) {
+                case 'h':
+                    cardContent.classList.add('swiped-left');
+                    break;
+                case 'k':
+                    cardContent.classList.add('swiped-up');
+                    break;
+                case 'l':
+                    cardContent.classList.add('swiped-right');
+                    break;
             }
         }
     }
+}
+
+function handleKeyUp(e) {
+    if (reviewSection.classList.contains('hidden')) return;
+    const key = e.key.toLowerCase();
+    if (keyDownState[key] && !keyActionExecuted[key]) {
+        keyActionExecuted[key] = true;
+        keyDownState[key] = false;
+        
+        switch(key) {
+            case 'h':
+                updateCardStatus(false);
+                setTimeout(nextCard, 200);
+                break;
+            case 'k':
+                setTimeout(() => {
+                    toggleCardFace(true);
+                    cardContent.classList.remove('swiped-up');
+                    cardContent.style.transform = '';
+                    cardContent.style.backgroundColor = '';
+                    cardContent.style.color = '';
+                }, 200);
+                break;
+            case 'l':
+                updateCardStatus(true);
+                setTimeout(nextCard, 200);
+                break;
+        }
+    }
+
 }
 
 let startX = 0;
@@ -2039,14 +2059,25 @@ function updateCardStatus(known) {
         const insertPosition = Math.min(randomPosition, reviewCards.length);
         reviewCards.splice(insertPosition, 0, card);
     }
+    
+    // 如果单词列表可见，更新列表内容
+    if (isWordListVisible) {
+        updateWordList();
+    }
 }
 
 function nextCard() {
     currentCardIndex++;
     showCurrentCard();
+
+    if (isWordListVisible) {
+        updateWordList();
+    }
 }
 
 function finishReview() {
+    hideWordList();
+    
     showCardsList();
     
     // 移除滑动事件监听器
@@ -2341,6 +2372,135 @@ function handleDeviceOrientation(event) {
             cardContent.style.color = '';
         }, 300);
     }
+}
+
+let wordListPanel = null;
+let isWordListVisible = false;
+
+function initWordList() {
+    wordListPanel = document.getElementById('word-list-panel');
+    if (!wordListPanel) return;
+
+    document.addEventListener('click', (e) => {
+        if (isWordListVisible && !wordListPanel.contains(e.target)) {
+            hideWordList();
+        }
+    });
+}
+
+function toggleWordList() {
+    if (isWordListVisible) {
+        hideWordList();
+    } else {
+        showWordList();
+    }
+}
+
+function showWordList() {
+    if (!wordListPanel || reviewCards.length === 0) return;
+    
+    updateWordList();
+    wordListPanel.classList.remove('hidden');
+    setTimeout(() => {
+        wordListPanel.classList.add('show');
+        setTimeout(() => {
+            scrollToCurrentWord();
+        }, 400);
+    }, 10);
+    isWordListVisible = true;
+}
+
+function hideWordList() {
+    if (!wordListPanel) return;
+    
+    wordListPanel.classList.remove('show');
+    setTimeout(() => {
+        wordListPanel.classList.add('hidden');
+    }, 300);
+    isWordListVisible = false;
+}
+
+function updateWordList() {
+    if (!wordListPanel || reviewCards.length === 0) return;
+    
+    const reviewedContainer = wordListPanel.querySelector('.word-list-reviewed');
+    const currentContainer = wordListPanel.querySelector('.word-list-current');
+    const upcomingContainer = wordListPanel.querySelector('.word-list-upcoming');
+    const countElement = wordListPanel.querySelector('.word-list-count');
+    
+    if (!reviewedContainer || !currentContainer || !upcomingContainer || !countElement) return;
+
+    countElement.textContent = `${currentCardIndex + 1} / ${reviewCards.length}`;
+
+    reviewedContainer.innerHTML = '';
+    currentContainer.innerHTML = '';
+    upcomingContainer.innerHTML = '';
+
+    if (currentCardIndex > 0) {
+        for (let i = 0; i < currentCardIndex; i++) {
+            const card = reviewCards[i];
+            if (card.nextReviewDate > Date.now()) {
+                const item = createWordListItem(card, 'reviewed');
+                reviewedContainer.appendChild(item);
+            } else {
+                const item = createWordListItem(card, 'forgotton');
+                reviewedContainer.appendChild(item);
+            }
+        }
+    }
+
+    if (currentCardIndex < reviewCards.length) {
+        const currentCard = reviewCards[currentCardIndex];
+        const currentItem = createWordListItem(currentCard, 'current');
+        currentContainer.appendChild(currentItem);
+    }
+
+    if (currentCardIndex < reviewCards.length - 1) {
+        for (let i = currentCardIndex + 1; i < reviewCards.length; i++) {
+            const card = reviewCards[i];
+            const item = createWordListItem(card, 'upcoming');
+            upcomingContainer.appendChild(item);
+        }
+    }
+
+    scrollToCurrentWord();
+}
+
+// 滚动到当前单词位置，保持其在中间
+function scrollToCurrentWord() {
+    const wordListContent = wordListPanel.querySelector('.word-list-content');
+    const currentItem = wordListPanel.querySelector('.word-list-item.current');
+    
+    if (!wordListContent || !currentItem) return;
+
+    setTimeout(() => {
+        const containerRect = wordListContent.getBoundingClientRect();
+        const itemRect = currentItem.getBoundingClientRect();
+
+        const containerHeight = containerRect.height;
+        const itemTop = itemRect.top - containerRect.top;
+        const itemHeight = itemRect.height;
+
+        let targetScrollTop = wordListContent.scrollTop + itemTop - (containerHeight / 2) + (itemHeight / 2);
+
+        const maxScrollTop = wordListContent.scrollHeight - wordListContent.clientHeight;
+        targetScrollTop = Math.max(0, Math.min(targetScrollTop, maxScrollTop));
+
+        wordListContent.scrollTo({
+            top: targetScrollTop,
+            behavior: 'smooth'
+        });
+    }, 100);
+}
+
+function createWordListItem(card, type) {
+    const item = document.createElement('div');
+    item.className = `word-list-item ${type}`;
+
+    const frontText = card.front.length > 30 ? card.front.substring(0, 30) + '...' : card.front;
+    item.textContent = frontText;
+    
+    return item;
 }
 
 initApp();
