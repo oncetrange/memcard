@@ -238,6 +238,11 @@ function playAudioData(audioData) {
     });
 }
 
+// 本地存储相关元素
+const exportCards = document.getElementById('export-cards');
+const importCards = document.getElementById('import-cards');
+const saveCardsFile = document.getElementById('save-cards-file');
+
 function initAuthElements() {
     userStatus = document.getElementById('user-status');
     loginButton = document.getElementById('login-button');
@@ -255,10 +260,32 @@ function initAuthElements() {
     downloadCards = document.getElementById('download-cards');
     mergeCards = document.getElementById('merge-cards');
     settingsBack = document.getElementById('settings-back');
+
+    if (exportCards) {
+        exportCards.addEventListener('click', downloadCardsAsFile);
+    }
+    
+    if (importCards) {
+        importCards.addEventListener('click', async () => {
+            await loadCardsFromFile();
+            renderCardsList();
+            updateReviewButtonState();
+            updateCardsStats();
+            showStatus('Cards imported successfully', 'success');
+        });
+    }
+    
+    if (saveCardsFile) {
+        saveCardsFile.addEventListener('click', async () => {
+            await saveCards();
+            showStatus('Cards saved to file', 'success');
+        });
+    }
 }
 
 
-let cards = JSON.parse(localStorage.getItem('memoryCards')) || [];
+let cards = [];
+let fileHandle = null; // 用于存储文件句柄
 let reviewCards = [];
 let currentCardIndex = 0;
 let isShowingAnswer = false;
@@ -776,9 +803,11 @@ function showCardsList() {
     cardsListSection.classList.remove('hidden');
 }
 
-function initApp() {
+async function initApp() {
     initAuthElements();
     loadScoreData();
+    
+    await loadCardsFromFile();
     
     showCardsList();
     
@@ -916,9 +945,18 @@ function initApp() {
 
     // 添加键盘事件监听器
     document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyDown);
         
     // 设置倾斜控制UI事件
     setupTiltControls();
+    
+    // 设置每分钟自动刷新卡片列表
+    setInterval(() => {
+        if (cardsListSection && !cardsListSection.classList.contains('hidden')) {
+            renderCardsList();
+            updateCardsStats();
+        }
+    }, 60000); // 60000毫秒 = 1分钟
 }
 
 let gemSlots = [0, 0, 0, 0, 0, 0];
@@ -993,6 +1031,7 @@ function showCardPreview(front, gemlist) {
     `;
     if (effectClass!='') cardPreview.classList.add(effectClass);
     cardPreview.classList.remove('hidden');
+    speakText(front);
     cardPreview.addEventListener('click', () => {
         const container = cardPreview.querySelector('.card-preview-container');
         if (container) {
@@ -1018,7 +1057,7 @@ function showCardPreview(front, gemlist) {
     
 }
 
-function saveCard() {
+function createCard() {
     const front = cardFrontInput.value.trim();
     const back = cardBackInput.value.trim();
     if (front && back) {
@@ -1056,7 +1095,7 @@ function saveCard() {
     }
 }
 
-saveCardButton.addEventListener('click', saveCard);
+saveCardButton.addEventListener('click', createCard);
 
 function renderCardsList() {
     cardsContainer.innerHTML = '';
@@ -1141,10 +1180,122 @@ function deleteCard(id) {
     }
 }
 
-function saveCards() {
-    localStorage.setItem('memoryCards', JSON.stringify(cards));
-    localStorage.setItem('gemSlots', JSON.stringify(gemSlots));
-    localStorage.setItem('gemTotal', JSON.stringify(gemTotal));
+// 文件系统存储相关函数
+async function saveCards() {
+    try {
+        localStorage.setItem('gemSlots', JSON.stringify(gemSlots));
+        localStorage.setItem('gemTotal', JSON.stringify(gemTotal));
+
+        await saveCardsToFile();
+    } catch (error) {
+        console.error('save cards failed:', error);
+        // 如果文件保存失败，回退到 localStorage（仅作为备份）
+        try {
+            localStorage.setItem('memoryCards', JSON.stringify(cards));
+        } catch (localStorageError) {
+            console.error('localStorage failed:', localStorageError);
+            alert('save failed, please check storage space');
+        }
+    }
+}
+
+async function saveCardsToFile() {
+    if (!fileHandle) {
+        // 如果没有文件句柄，创建新文件
+        await createNewCardsFile();
+    }
+    
+    if (fileHandle) {
+        const writable = await fileHandle.createWritable();
+        const data = {
+            cards: cards,
+            version: '1.0',
+            lastSaved: Date.now()
+        };
+        await writable.write(JSON.stringify(data, null, 2));
+        await writable.close();
+    }
+}
+
+async function createNewCardsFile() {
+    try {
+        // 使用 File System Access API
+        if ('showSaveFilePicker' in window) {
+            fileHandle = await window.showSaveFilePicker({
+                suggestedName: 'memory-cards.json',
+                types: [{
+                    description: 'Memory Cards Data',
+                    accept: {
+                        'application/json': ['.json']
+                    }
+                }]
+            });
+        }
+    } catch (error) {
+        console.error('create file failed:', error);
+    }
+}
+
+function downloadCardsAsFile() {
+    const data = {
+        cards: cards,
+        version: '1.0',
+        lastSaved: Date.now()
+    };
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'memory-cards.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function showStatus(message, type = 'info') {
+    const statusElement = document.getElementById('local-storage-status');
+    if (statusElement) {
+        statusElement.textContent = message;
+        statusElement.className = `status ${type}`;
+        setTimeout(() => {
+            statusElement.textContent = '';
+            statusElement.className = 'status';
+        }, 3000);
+    }
+}
+
+async function loadCardsFromFile() {
+    try {
+
+        if ('showOpenFilePicker' in window) {
+            try {
+                [fileHandle] = await window.showOpenFilePicker({
+                    types: [{
+                        description: 'Memory Cards Data',
+                        accept: {
+                            'application/json': ['.json']
+                        }
+                    }]
+                });
+                
+                const file = await fileHandle.getFile();
+                const content = await file.text();
+                const data = JSON.parse(content);
+                
+                if (data.cards && Array.isArray(data.cards)) {
+                    cards = data.cards;
+                    // 保存文件句柄以便后续保存
+                    fileHandle = fileHandle;
+                }
+            } catch (fileError) {
+                console.log('load cards failed, using localStorage data:', fileError);
+            }
+        }
+    } catch (error) {
+        console.error('load cards failed:', error);
+    }
 }
 
 function loadScoreData() {
@@ -1199,7 +1350,35 @@ function selectCardsForReview() {
 
     for (const card of reviewCards) {
         if (!card.lastReviewed) {
-            unknownCountThreshold++;
+            unknownCountThreshold += 2;
+        }
+        if (card.nextReviewDate - card.lastReviewed < 1000 * 60 * 60 * 2) {
+            unknownCountThreshold += 1;
+        }
+        if (card.gem && Array.isArray(card.gem)) {
+            card.gem.forEach((gemData, gemPosition) => {
+                const gemIndex = gemData.index;
+                const isNewGem = gemData.isNew;
+                
+                if (!isNewGem) {
+                    const interval = card.lastReviewed ? Math.max(0, card.nextReviewDate - card.lastReviewed - 1) : 0;
+                    const times = 1 + Math.ceil(Math.log2(interval / (1000 * 60 * 45)));
+                    let smallCount = 1;
+                    let bigCount = 0;
+                    for (let i = 0; i < 2 * times; i++) {
+                        smallCount+=Math.random() > 0.5 ? 1 : 0;
+                    }
+                    if (smallCount >= 8) {
+                        bigCount = Math.ceil((smallCount-4) / 4);
+                        smallCount = 4 + smallCount % 4;
+                    }
+
+                    gemData.glowDots = {
+                        smallCount: smallCount,
+                        bigCount: bigCount
+                    };
+                }
+            });
         }
     }
 
@@ -1305,9 +1484,9 @@ function renderGemGlowDots(container, gemIndex, smallCount, bigCount) {
         const dot = document.createElement('div');
         dot.className = 'gem-glow-dot';
         const angle = i / bigCount * 2 * Math.PI;
-        const radius = 12;
-        dot.style.width = '12px';
-        dot.style.height = '12px';
+        const radius = 24;
+        dot.style.width = '8px';
+        dot.style.height = '8px';
         dot.style.background = GEM_COLORS[gemIndex];
         dot.style.left = `${12 + Math.sin(angle) * radius}px`;
         dot.style.top = `${12 - Math.cos(angle) * radius}px`;
@@ -1347,9 +1526,6 @@ function toggleCardFace(speakflag) {
         const card = reviewCards[currentCardIndex];
         if (card && card.gem && Array.isArray(card.gem)) {
             cardContent.innerHTML = renderCardFrontGems(card.gem, card.lastReviewed) + `<div style='width:100%;text-align:center;'>${card.front}</div>`;
-            const interval = card.lastReviewed ? Math.max(0, card.nextReviewDate - card.lastReviewed - 1) : 0;
-            hours = Math.floor(interval / (1000 * 60 * 60));
-            days = Math.floor(interval / (1000 * 60 * 60 * 24));
             card.gem.forEach((gemData, gemPosition) => {
                 const gemIndex = gemData.index;
                 const isNewGem = gemData.isNew;
@@ -1358,7 +1534,8 @@ function toggleCardFace(speakflag) {
                     const dotsContainer = document.getElementById(`gem-glow-dots-${gemIndex}-${gemPosition}`);
                     if (dotsContainer) {
                         dotsContainer.innerHTML = '';
-                        renderGemGlowDots(dotsContainer, gemIndex, 1 + Math.min(hours, 24), days);
+                        const glowDots = gemData.glowDots || { smallCount: 1, bigCount: 0 };
+                        renderGemGlowDots(dotsContainer, gemIndex, glowDots.smallCount, glowDots.bigCount);
                     }
                 }
             });
@@ -1400,149 +1577,180 @@ function toggleCardFace(speakflag) {
 function handleKeyDown(e) {
     if (!e.key) return;
     // 如果预览窗显示，只处理关闭操作
-    const cardPreview = document.getElementById('card-preview');
-    if (cardPreview && !cardPreview.classList.contains('hidden')) {
-        if (e.key.toLowerCase() === 'w' || e.key === 'Escape') {
-            e.preventDefault();
-            setTimeout(() => {
-                cardPreview.classList.add('hidden');
-                cardPreview.innerHTML = '';
-                cardPreview.removeEventListener('click', () => {});
-            }, 800);
-        }
-        return;
-    }
-    // 如果总结窗显示，只处理关闭操作
-    const sessionSummary = document.getElementById('session-summary');
-    if (sessionSummary && !sessionSummary.classList.contains('hidden')) {
-        if (e.key.toLowerCase() === 'w' || e.key === 'Escape') {
-            e.preventDefault();
-            closeSessionSummary();
-        }
-        return;
-    }
-
-    // 如果在新建卡片，ctrl+1: 正面输入框, ctrl+2: 背面输入框, ctrl+s: 保存, esc: 返回列表
-    if (createSection && !createSection.classList.contains('hidden')) {
-        if (e.ctrlKey) {
-            switch(e.key) {
-                case '1':
-                    e.preventDefault();
-                    cardFrontInput.focus();
-                    break;
-                case '2':
-                    e.preventDefault();
-                    cardBackInput.focus();
-                    break;
-                case 's':
-                case 'S':
-                    e.preventDefault();
-                    saveCard();
-                    break;
+    if (e.type === 'keydown') {
+        const cardPreview = document.getElementById('card-preview');
+        if (cardPreview && !cardPreview.classList.contains('hidden')) {
+            if (e.key.toLowerCase() === 'w' || e.key === 'Escape') {
+                e.preventDefault();
+                setTimeout(() => {
+                    cardPreview.classList.add('hidden');
+                    cardPreview.innerHTML = '';
+                    cardPreview.removeEventListener('click', () => {});
+                }, 800);
             }
-        } else if (e.key === 'Escape') {
-            e.preventDefault();
-            showCardsList();
+            return;
         }
-        return;
-    }
-
-    // 如果在同步界面，u: upload, d: download, m: merge, esc: close
-    if (settingsSection && !settingsSection.classList.contains('hidden')) {
-        switch(e.key.toLowerCase()) {
-            case 'u':
+        // 如果总结窗显示，只处理关闭操作
+        const sessionSummary = document.getElementById('session-summary');
+        if (sessionSummary && !sessionSummary.classList.contains('hidden')) {
+            if (e.key.toLowerCase() === 'w' || e.key === 'Escape') {
                 e.preventDefault();
-                uploadCardsToServer();
-                break;
-            case 'd':
-                e.preventDefault();
-                downloadCardsFromServer();
-                break;
-            case 'm':
-                e.preventDefault();
-                mergeCardsWithServer();
-                break;
-            case 's':
-                e.preventDefault();
-                speechEnabledSetting.checked = !speechEnabledSetting.checked;
-                break;
-        }
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            showCardsList();
-        }
-        return;
-    }
-
-    // 如果在列表界面，处理快捷操作
-    if (cardsListSection && !cardsListSection.classList.contains('hidden')) {
-        if (e.shiftKey) {
-            switch(e.key.toLowerCase()) {
-                case 'j':
-                    e.preventDefault();
-                    window.scrollBy(0, 1000);
-                    break;
-                case 'k':
-                    e.preventDefault();
-                    window.scrollBy(0, -1000);
-                    break;
+                closeSessionSummary();
             }
-        } else {
+            return;
+        }
+
+        // 如果在新建卡片，ctrl+1: 正面输入框, ctrl+2: 背面输入框, ctrl+s: 保存, esc: 返回列表
+        if (createSection && !createSection.classList.contains('hidden')) {
+            if (e.ctrlKey) {
+                switch(e.key) {
+                    case '1':
+                        e.preventDefault();
+                        cardFrontInput.focus();
+                        break;
+                    case '2':
+                        e.preventDefault();
+                        cardBackInput.focus();
+                        break;
+                    case 's':
+                    case 'S':
+                        e.preventDefault();
+                        createCard();
+                        break;
+                }
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                showCardsList();
+            }
+            return;
+        }
+
+        // 如果在同步界面，u: upload, d: download, m: merge, esc: close
+        if (settingsSection && !settingsSection.classList.contains('hidden')) {
             switch(e.key.toLowerCase()) {
-                case 'r':
+                case 'u':
                     e.preventDefault();
-                    if (!startReviewButton.disabled) {
-                        startReviewButton.click();
-                    }
+                    uploadCardsToServer();
                     break;
-                case 'n':
+                case 'd':
                     e.preventDefault();
-                    showCreateSection();
+                    downloadCardsFromServer();
                     break;
-                case 'j':
+                case 'm':
                     e.preventDefault();
-                    window.scrollBy(0, 100);
-                    break;
-                case 'k':
-                    e.preventDefault();
-                    window.scrollBy(0, -100);
+                    mergeCardsWithServer();
                     break;
                 case 's':
                     e.preventDefault();
-                    showSettingsSection();
+                    speechEnabledSetting.checked = !speechEnabledSetting.checked;
+                    break;
+                case 'e':
+                    e.preventDefault();
+                    exportCardsToFile();
+                    break;
+                case 'i':
+                    e.preventDefault();
+                    importCards.click();
                     break;
             }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                showCardsList();
+            }
+            return;
         }
-        return;
+
+        // 如果在列表界面，处理快捷操作
+        if (cardsListSection && !cardsListSection.classList.contains('hidden')) {
+            if (e.shiftKey) {
+                switch(e.key.toLowerCase()) {
+                    case 'j':
+                        e.preventDefault();
+                        window.scrollBy(0, 1000);
+                        break;
+                    case 'k':
+                        e.preventDefault();
+                        window.scrollBy(0, -1000);
+                        break;
+                }
+            } else {
+                switch(e.key.toLowerCase()) {
+                    case 'r':
+                        e.preventDefault();
+                        if (!startReviewButton.disabled) {
+                            startReviewButton.click();
+                        }
+                        break;
+                    case 'n':
+                        e.preventDefault();
+                        showCreateSection();
+                        break;
+                    case 'j':
+                        e.preventDefault();
+                        window.scrollBy(0, 100);
+                        break;
+                    case 'k':
+                        e.preventDefault();
+                        window.scrollBy(0, -100);
+                        break;
+                    case 's':
+                        e.preventDefault();
+                        showSettingsSection();
+                        break;
+                }
+            }
+            return;
+        }
     }
-    
     // 如果在复习界面，处理复习操作
     if (reviewSection.classList.contains('hidden')) return;
     
-    switch(e.key.toLowerCase()) {
-        case 'h':
-            e.preventDefault();
-            cardContent.classList.add('swiped-left');
-            updateCardStatus(false);
-            setTimeout(nextCard, 300);
-            break;
-        case 'k':
-            e.preventDefault();
-            cardContent.classList.add('swiped-up');
-            setTimeout(() => {
-                toggleCardFace(true);
-                cardContent.classList.remove('swiped-up');
-                cardContent.style.transform = '';
-                cardContent.style.backgroundColor = '';
-                cardContent.style.color = '';
-            }, 300);
-            break;
-        case 'l':
-            e.preventDefault();
-            cardContent.classList.add('swiped-right');
-            updateCardStatus(true);
-            setTimeout(nextCard, 300);
-            break;
+    const key = e.key.toLowerCase();
+    if (['h', 'k', 'l'].includes(key)) {
+        e.preventDefault();
+        if (e.type === 'keydown') {
+            if (!keyDownState[key]) {
+                keyDownState[key] = true;
+                keyActionExecuted[key] = false;
+                switch(key) {
+                    case 'h':
+                        cardContent.classList.add('swiped-left');
+                        break;
+                    case 'k':
+                        cardContent.classList.add('swiped-up');
+                        break;
+                    case 'l':
+                        cardContent.classList.add('swiped-right');
+                        break;
+                }
+            }
+        }
+        else if (e.type === 'keyup') {
+            if (keyDownState[key] && !keyActionExecuted[key]) {
+                keyActionExecuted[key] = true;
+                keyDownState[key] = false;
+                
+                switch(key) {
+                    case 'h':
+                        updateCardStatus(false);
+                        setTimeout(nextCard, 200);
+                        break;
+                    case 'k':
+                        setTimeout(() => {
+                            toggleCardFace(true);
+                            cardContent.classList.remove('swiped-up');
+                            cardContent.style.transform = '';
+                            cardContent.style.backgroundColor = '';
+                            cardContent.style.color = '';
+                        }, 200);
+                        break;
+                    case 'l':
+                        updateCardStatus(true);
+                        setTimeout(nextCard, 200);
+                        break;
+                }
+            }
+        }
     }
 }
 
@@ -1566,6 +1774,17 @@ let sessionTotalCount = 0;
 let sessionUnknownCount = 0;
 // for new card, add unknown count threshold
 let unknownCountThreshold = 0;
+
+let keyDownState = {
+    h: false,
+    k: false,
+    l: false
+};
+let keyActionExecuted = {
+    h: false,
+    k: false,
+    l: false
+};
 
 function handleStart(e) {
     startX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
@@ -1714,13 +1933,12 @@ function flyGemGlowToSlot(gemIndex, gemPosition, cb) {
             dot.style.left = `${toRect.left + toRect.width/2}px`;
             dot.style.top = `${toRect.top + toRect.height/2}px`;
             
-        }, 10 + index * 50); // 每个光点延迟50ms，创造波浪效果
+        }, 10 + index * 50);
 
         setTimeout(() => {
             document.body.removeChild(dot);
             completedFlights++;
-            
-            // 所有光点都飞行完成后回调
+
             if (completedFlights === totalDots && cb) {
                 cb();
             }
@@ -1730,11 +1948,6 @@ function flyGemGlowToSlot(gemIndex, gemPosition, cb) {
 
 function handleGemScoreOnKnown(card) {
     if (!card.gem || !Array.isArray(card.gem)) return;
-
-    const interval = card.lastReviewed ? Math.max(0, card.nextReviewDate - card.lastReviewed - 1) : 0;
-    const hours = Math.floor(interval / (1000 * 60 * 60));
-    const days = Math.floor(interval / (1000 * 60 * 60 * 24));
-    
     let completedGems = 0;
     const totalGems = card.gem.length;
     
@@ -1752,7 +1965,8 @@ function handleGemScoreOnKnown(card) {
         }
         
         flyGemGlowToSlot(gemIndex, gemPosition, () => {
-            let addScore = Math.min(hours, 24) + 1 + days * 2;
+            const glowDots = gemData.glowDots || { smallCount: 1, bigCount: 0 };
+            let addScore = glowDots.smallCount + glowDots.bigCount * 4;
             gemSlots[gemIndex] += addScore;
             gemTotal[gemIndex] += addScore;
             if (gemSlots[gemIndex] >= 50) {
@@ -1771,7 +1985,7 @@ function handleGemScoreOnKnown(card) {
                     reviewCards[currentCardIndex].gem = gemlist;
                     isShowingAnswer = true;
                     toggleCardFace(false);
-                    saveCards();
+                    
                 }
             }
             completedGems++;
@@ -1825,7 +2039,6 @@ function updateCardStatus(known) {
         const insertPosition = Math.min(randomPosition, reviewCards.length);
         reviewCards.splice(insertPosition, 0, card);
     }
-    saveCards();
 }
 
 function nextCard() {
@@ -1874,10 +2087,10 @@ function showSessionSummary() {
     const endMs = Date.now();
     const totalMs = Math.max(0, endMs - sessionStartMs);
     const avgMs = totalMs / sessionTotalCount;
-
+    const timeThreshold = (4000 * (sessionTotalCount - sessionUnknownCount) + 6000 * sessionUnknownCount) / sessionTotalCount;
     let stars = 1;
-    if (avgMs <= 3500) stars = 3; else if (avgMs <= 5000) stars = 2;
-    if (sessionUnknownCount <= 5 + unknownCountThreshold) stars += 2; else if (sessionUnknownCount <= 10 + unknownCountThreshold * 2) stars += 1;
+    if (avgMs <= timeThreshold) stars += 2; else if (avgMs <= timeThreshold + 1500) stars += 1;
+    if (sessionUnknownCount <= 5 + unknownCountThreshold) stars += 2; else if (sessionUnknownCount <= 15 + unknownCountThreshold) stars += 1;
     const originalIndex = Math.floor(Math.random() * 6);
     const starPath = getGemPath(originalIndex);
     const starHTML = `<img src="${starPath}" alt="gem">`.repeat(stars);
