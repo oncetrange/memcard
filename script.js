@@ -601,7 +601,7 @@ async function uploadCardsToServer() {
         const uploadData = {
             cards: cards,
             gemSlots: gemSlots,
-            gemTotal: gemTotal
+            gemScore: gemScore
         };
         
         const response = await fetch(`${API_BASE_URL}/cards`, {
@@ -660,11 +660,11 @@ async function downloadCardsFromServer() {
             if (Array.isArray(serverData)) {
                 cards = serverData;
                 gemSlots = [0, 0, 0, 0, 0, 0];
-                gemTotal = [0, 0, 0, 0, 0, 0];
+                gemScore = [0, 0, 0, 0, 0, 0];
             } else {
                 cards = serverData.cards || [];
                 gemSlots = serverData.gemSlots || [0, 0, 0, 0, 0, 0];
-                gemTotal = serverData.gemTotal || [0, 0, 0, 0, 0, 0];
+                gemScore = serverData.gemScore || [0, 0, 0, 0, 0, 0];
             }
             
             saveCards();
@@ -706,14 +706,14 @@ async function mergeCardsWithServer() {
 
         let serverCards = [];
         let serverGemSlots = [0, 0, 0, 0, 0, 0];
-        let serverGemTotal = [0, 0, 0, 0, 0, 0];
+        let serverGemScore = [0, 0, 0, 0, 0, 0];
         
         if (Array.isArray(serverData)) {
             serverCards = serverData;
         } else {
             serverCards = serverData.cards || [];
             serverGemSlots = serverData.gemSlots || [0, 0, 0, 0, 0, 0];
-            serverGemTotal = serverData.gemTotal || [0, 0, 0, 0, 0, 0];
+            serverGemScore = serverData.gemScore || [0, 0, 0, 0, 0, 0];
         }
 
         const mergedCards = [...cards];
@@ -727,7 +727,7 @@ async function mergeCardsWithServer() {
         
         for (let i = 0; i < 6; i++) {
             gemSlots[i] = Math.max(gemSlots[i], serverGemSlots[i]);
-            gemTotal[i] = Math.max(gemTotal[i], serverGemTotal[i]);
+            gemScore[i] = Math.max(gemScore[i], serverGemScore[i]);
         }
         
         cards = mergedCards;
@@ -960,7 +960,7 @@ async function initApp() {
 }
 
 let gemSlots = [0, 0, 0, 0, 0, 0];
-let gemTotal = [0, 0, 0, 0, 0, 0];
+let gemScore = [0, 0, 0, 0, 0, 0];
 const GEM_COLORS = [
     '#3b6fff', // blue
     '#00e0e0', // cyan
@@ -1193,7 +1193,7 @@ function deleteCard(id) {
 async function saveCards() {
     try {
         localStorage.setItem('gemSlots', JSON.stringify(gemSlots));
-        localStorage.setItem('gemTotal', JSON.stringify(gemTotal));
+        localStorage.setItem('gemScore', JSON.stringify(gemScore));
 
         await saveCardsToFile();
     } catch (error) {
@@ -1309,13 +1309,13 @@ async function loadCardsFromFile() {
 
 function loadScoreData() {
     const savedGemSlots = localStorage.getItem('gemSlots');
-    const savedGemTotal = localStorage.getItem('gemTotal');
+    const savedGemScore = localStorage.getItem('gemScore');
     
     if (savedGemSlots) {
         gemSlots = JSON.parse(savedGemSlots);
     }
-    if (savedGemTotal) {
-        gemTotal = JSON.parse(savedGemTotal);
+    if (savedGemScore) {
+        gemScore = JSON.parse(savedGemScore);
     }
 }
 
@@ -1437,7 +1437,7 @@ function renderGemSlots() {
         slot.className = 'gem-slot';
         slot.innerHTML = `
             <img class="gem-slot-img" src="${getGemPath(i)}" alt="gem">
-            <div class="gem-slot-score" style="color:${GEM_COLORS[i]};font-size:12px">${gemTotal[i]}</div>
+            <div class="gem-slot-score" style="color:${GEM_COLORS[i]};font-size:12px">${gemScore[i]}</div>
             <div class="gem-slot-glow" id="gem-slot-glow-${i}"></div>
             <div class="gem-slot-cover" id="gem-slot-cover-${i}"></div>
         `;
@@ -1988,7 +1988,7 @@ function handleGemScoreOnKnown(card) {
             const glowDots = gemData.glowDots || { smallCount: 1, bigCount: 0 };
             let addScore = glowDots.smallCount + glowDots.bigCount * 4;
             gemSlots[gemIndex] += addScore;
-            gemTotal[gemIndex] += addScore;
+            gemScore[gemIndex] += addScore;
             if (gemSlots[gemIndex] >= 50) {
                 if (reviewCards[currentCardIndex]) {
                     if (!reviewCards[currentCardIndex].gem) reviewCards[currentCardIndex].gem = [];
