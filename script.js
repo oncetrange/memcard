@@ -243,6 +243,10 @@ const exportCards = document.getElementById('export-cards');
 const importCards = document.getElementById('import-cards');
 const saveCardsFile = document.getElementById('save-cards-file');
 
+// 时间调整相关元素
+const timeAdjustInput = document.getElementById('time-adjust-input');
+const adjustTimeBtn = document.getElementById('adjust-time-btn');
+
 function initAuthElements() {
     userStatus = document.getElementById('user-status');
     loginButton = document.getElementById('login-button');
@@ -280,6 +284,11 @@ function initAuthElements() {
             await saveCards();
             showStatus('Cards saved to file', 'success');
         });
+    }
+
+    // 时间调整功能
+    if (adjustTimeBtn) {
+        adjustTimeBtn.addEventListener('click', adjustAllCardsTime);
     }
 }
 
@@ -1208,6 +1217,46 @@ async function saveCards() {
     }
 }
 
+function adjustAllCardsTime() {
+    const minutes = parseInt(timeAdjustInput.value);
+    
+    if (isNaN(minutes)) {
+        alert('please input valid number');
+        return;
+    }
+    
+    if (minutes === 0) {
+        alert('please input non-zero number');
+        return;
+    }
+    
+    if (Math.abs(minutes) > 1440) {
+        alert('adjust time cannot exceed 24 hours (1440 minutes)');
+        return;
+    }
+    
+    const milliseconds = minutes * 60 * 1000;
+    
+    cards.forEach(card => {
+
+        if (card.lastReviewed) {
+            card.lastReviewed += milliseconds;
+        }
+
+        card.nextReviewDate += milliseconds;
+    });
+
+    saveCards();
+    renderCardsList();
+    updateReviewButtonState();
+    updateCardsStats();
+
+    timeAdjustInput.value = '';
+    const direction = minutes > 0 ? '>>' : '<<';
+    const absMinutes = Math.abs(minutes);
+    showStatus(`${direction}${absMinutes} minutes`, 'success');
+}
+
 async function saveCardsToFile() {
     if (!fileHandle) {
         // 如果没有文件句柄，创建新文件
@@ -1599,7 +1648,6 @@ function handleKeyDown(e) {
                 cardPreview.removeEventListener('click', () => {});
             }, 800);
         }
-        return;
     }
     // 如果总结窗显示，只处理关闭操作
     const sessionSummary = document.getElementById('session-summary');
@@ -1608,7 +1656,6 @@ function handleKeyDown(e) {
             e.preventDefault();
             closeSessionSummary();
         }
-        return;
     }
 
     // 如果在新建卡片，ctrl+1: 正面输入框, ctrl+2: 背面输入框, ctrl+s: 保存, esc: 返回列表
@@ -1754,7 +1801,7 @@ function handleKeyUp(e) {
         switch(key) {
             case 'h':
                 updateCardStatus(false);
-                setTimeout(nextCard, 200);
+                setTimeout(nextCard, 100);
                 break;
             case 'k':
                 setTimeout(() => {
@@ -1763,11 +1810,11 @@ function handleKeyUp(e) {
                     cardContent.style.transform = '';
                     cardContent.style.backgroundColor = '';
                     cardContent.style.color = '';
-                }, 200);
+                }, 100);
                 break;
             case 'l':
                 updateCardStatus(true);
-                setTimeout(nextCard, 200);
+                setTimeout(nextCard, 100);
                 break;
         }
     }

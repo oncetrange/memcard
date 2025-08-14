@@ -127,7 +127,13 @@
         <div id="cards-list" class="section">
             <div class="cards-header">
                 <h2>Card List</h2>
-                <button id="add-card-btn" class="btn btn-add">+</button>
+                <div class="cards-header-controls">
+                    <div class="time-adjust-controls">
+                        <input type="number" id="time-adjust-input" placeholder="minutes" min="-1440" max="1440" step="1">
+                        <button id="adjust-time-btn" class="btn btn-secondary">adjust</button>
+                    </div>
+                    <button id="add-card-btn" class="btn btn-add">+</button>
+                </div>
             </div>
             <div id="cards-stats" class="cards-stats">
                 <span id="review-count">0</span> / <span id="total-count">0</span>

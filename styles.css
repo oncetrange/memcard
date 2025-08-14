@@ -521,6 +521,31 @@ textarea {
     margin-bottom: 20px;
 }
 
+.cards-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.time-adjust-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.time-adjust-controls input {
+    width: 90px;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.time-adjust-controls button {
+    padding: 6px 12px;
+    font-size: 14px;
+}
+
 .cards-header h2 {
     margin-bottom: 0;
 }
