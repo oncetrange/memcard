@@ -143,7 +143,7 @@ app.post('/api/cards', authenticateToken, (req, res) => {
         // 新格式：包含卡片和分数数据
         if (!data.cards || !Array.isArray(data.cards) || 
             !data.gemSlots || !Array.isArray(data.gemSlots) ||
-            !data.gemTotal || !Array.isArray(data.gemTotal)) {
+            !data.gemScore || !Array.isArray(data.gemScore)) {
             return res.status(400).json({ error: 'Invalid data format' });
         }
         
@@ -153,7 +153,7 @@ app.post('/api/cards', authenticateToken, (req, res) => {
         }
         
         // 验证分数数据
-        if (data.gemSlots.length !== 6 || data.gemTotal.length !== 6) {
+        if (data.gemSlots.length !== 6 || data.gemScore.length !== 6) {
             return res.status(400).json({ error: 'Invalid score data format' });
         }
         
