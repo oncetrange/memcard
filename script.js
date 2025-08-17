@@ -11,7 +11,7 @@ const cardContent = document.getElementById('card-content');
 const cardPreview = document.getElementById('card-preview');
 const speechEnabledSetting = document.getElementById('speech-enabled-setting');
 
-const API_BASE_URL = 'https://117.72.179.137:3000/api'
+const API_BASE_URL = 'https://117.72.157.22:3000/api'
 
 const AUDIO_CACHE_PREFIX = 'youdao_audio_';
 const AUDIO_CACHE_DURATION = 30 * 24 * 60 * 60 * 1000;
@@ -243,9 +243,10 @@ const exportCards = document.getElementById('export-cards');
 const importCards = document.getElementById('import-cards');
 const saveCardsFile = document.getElementById('save-cards-file');
 
-// 时间调整相关元素
 const timeAdjustInput = document.getElementById('time-adjust-input');
 const adjustTimeBtn = document.getElementById('adjust-time-btn');
+
+const sortSelect = document.getElementById('sort-select');
 
 function initAuthElements() {
     userStatus = document.getElementById('user-status');
@@ -285,10 +286,15 @@ function initAuthElements() {
             showStatus('Cards saved to file', 'success');
         });
     }
-
-    // 时间调整功能
+    
     if (adjustTimeBtn) {
         adjustTimeBtn.addEventListener('click', adjustAllCardsTime);
+    }
+
+    if (sortSelect) {
+        sortSelect.addEventListener('change', () => {
+            renderCardsList();
+        });
     }
 }
 
@@ -1117,7 +1123,17 @@ function renderCardsList() {
         cardsContainer.innerHTML = '<p>empty, please create new cards</p>';
         return;
     }
-    cards.sort((a, b) => a.nextReviewDate - b.nextReviewDate);
+    const sortBy = sortSelect ? sortSelect.value : 'nextReview';
+    
+    if (sortBy === 'unknownRatio') {
+        cards.sort((a, b) => {
+            const ratioA = getUnknownRatio(a);
+            const ratioB = getUnknownRatio(b);
+            return ratioB - ratioA;
+        });
+    } else {
+        cards.sort((a, b) => a.nextReviewDate - b.nextReviewDate);
+    }
     cards.forEach(card => {
         const cardElement = document.createElement('div');
         cardElement.className = 'card-item';
@@ -1154,12 +1170,17 @@ function renderCardsList() {
                 }).join('')}
             </div>` : '<div class="card-item-gems"></div>';
         
+        const unknownRatio = getUnknownRatio(card);
+        const unknownRatioText = card.history && card.history.length > 0 
+            ? ` | Unknown Ratio: ${unknownRatio.toFixed(2)}`
+            : '';
+
         cardElement.innerHTML = `
             <div class="card-item-content">
                 <div class="card-item-front">${card.front}</div>
                 <div class="card-item-back">${card.back}</div>
                 <div class="card-item-stats">
-                    ${lastReviewedText} | ${nextReviewText}
+                    ${lastReviewedText} | ${nextReviewText}${unknownRatioText}
                 </div>
             </div>
             ${gemHTML}
@@ -1255,6 +1276,21 @@ function adjustAllCardsTime() {
     const direction = minutes > 0 ? '>>' : '<<';
     const absMinutes = Math.abs(minutes);
     showStatus(`${direction}${absMinutes} minutes`, 'success');
+}
+
+function getUnknownRatio(card) {
+    if (!card.history || card.history.length === 0) {
+        return 0;
+    }
+    
+    const unknownCount = card.history.filter(record => !record.known).length;
+    const knownCount = card.history.filter(record => record.known).length;
+    
+    if (knownCount === 0) {
+        return unknownCount > 0 ? 1 : 0;
+    }
+    
+    return unknownCount / knownCount;
 }
 
 async function saveCardsToFile() {

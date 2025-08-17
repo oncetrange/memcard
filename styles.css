@@ -546,6 +546,20 @@ textarea {
     font-size: 14px;
 }
 
+.sort-controls {
+    display: flex;
+    align-items: center;
+}
+
+.sort-select {
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: white;
+    cursor: pointer;
+}
+
 .cards-header h2 {
     margin-bottom: 0;
 }
